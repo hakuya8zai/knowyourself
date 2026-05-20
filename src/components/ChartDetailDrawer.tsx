@@ -20,6 +20,12 @@ export interface ChartDetail {
   description: string;  // Main explanation text
   interpretation?: string;  // Personal interpretation based on position
   advice?: string;      // Practical advice
+  /**
+   * Zodiac sign key (English lowercase, e.g. 'aries', 'taurus') for
+   * applying the matching theme via `[data-sign="..."]` CSS variables.
+   * For planets, this is typically the planet's ruler_sign.
+   */
+  sign?: string;
 }
 
 interface Props {
@@ -75,8 +81,8 @@ export function ChartDetailDrawer({ detail, onClose }: Props) {
   };
 
   return (
-    <div className={styles.overlay}>
-      <div ref={drawerRef} className={styles.drawer}>
+    <div className={styles.overlay} data-sign={detail.sign}>
+      <div ref={drawerRef} className={styles.drawer} data-sign={detail.sign}>
         {/* Handle bar */}
         <div className={styles.handleBar}>
           <div className={styles.handle} />

@@ -25,7 +25,9 @@
   display: flex;
   flex-direction: column;
   animation: slideUp 0.3s ease-out;
-  box-shadow: 0 -4px 32px rgba(127, 90, 240, 0.2);
+  /* Glow tinted by the active sign theme (falls back to default accent). */
+  box-shadow: 0 -4px 32px var(--accent-primary-glow, rgba(127, 90, 240, 0.2));
+  border-top: 1px solid var(--accent-primary-glow, rgba(127, 90, 240, 0.2));
 }
 
 @keyframes slideUp {
@@ -71,8 +73,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #7f5af0;
-  background: rgba(127, 90, 240, 0.15);
+  color: var(--accent-primary, #7f5af0);
+  background: var(--accent-primary-soft, rgba(127, 90, 240, 0.15));
   padding: 4px 10px;
   border-radius: 12px;
   margin-bottom: 8px;
@@ -129,11 +131,11 @@
 
 .keyword {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(127, 90, 240, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  background: var(--accent-primary-soft, rgba(127, 90, 240, 0.12));
   padding: 6px 14px;
   border-radius: 16px;
-  border: 1px solid rgba(127, 90, 240, 0.2);
+  border: 1px solid var(--accent-primary-glow, rgba(127, 90, 240, 0.2));
 }
 
 .category {
@@ -141,7 +143,7 @@
   color: rgba(255, 255, 255, 0.5);
   margin: 0 0 20px;
   padding-left: 12px;
-  border-left: 2px solid rgba(127, 90, 240, 0.4);
+  border-left: 2px solid var(--accent-primary, rgba(127, 90, 240, 0.4));
 }
 
 .section {

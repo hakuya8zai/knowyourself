@@ -211,3 +211,83 @@ input::placeholder {
   background: var(--accent-primary-soft);
   color: var(--text-headline);
 }
+
+/* ===========================================
+   Zodiac Sign Themes
+   Each block overrides --accent-primary / soft / glow
+   so any descendant that uses these vars
+   (e.g. ChartDetailDrawer) re-tints itself.
+   Selector form: [data-sign="aries"], etc.
+   =========================================== */
+
+[data-sign="aries"] {
+  --accent-primary: #ff5a3c;
+  --accent-primary-soft: rgba(255, 90, 60, 0.14);
+  --accent-primary-glow: rgba(255, 90, 60, 0.3);
+}
+
+[data-sign="taurus"] {
+  --accent-primary: #c9a55a;
+  --accent-primary-soft: rgba(201, 165, 90, 0.14);
+  --accent-primary-glow: rgba(201, 165, 90, 0.28);
+}
+
+[data-sign="gemini"] {
+  --accent-primary: #ffd75a;
+  --accent-primary-soft: rgba(255, 215, 90, 0.14);
+  --accent-primary-glow: rgba(255, 215, 90, 0.28);
+}
+
+[data-sign="cancer"] {
+  --accent-primary: #c8d8f0;
+  --accent-primary-soft: rgba(200, 216, 240, 0.14);
+  --accent-primary-glow: rgba(200, 216, 240, 0.3);
+}
+
+[data-sign="leo"] {
+  --accent-primary: #f0b450;
+  --accent-primary-soft: rgba(240, 180, 80, 0.14);
+  --accent-primary-glow: rgba(240, 180, 80, 0.3);
+}
+
+[data-sign="virgo"] {
+  --accent-primary: #8ac08a;
+  --accent-primary-soft: rgba(138, 192, 138, 0.14);
+  --accent-primary-glow: rgba(138, 192, 138, 0.28);
+}
+
+[data-sign="libra"] {
+  --accent-primary: #f0c8d4;
+  --accent-primary-soft: rgba(240, 200, 212, 0.14);
+  --accent-primary-glow: rgba(240, 200, 212, 0.3);
+}
+
+[data-sign="scorpio"] {
+  --accent-primary: #c84878;
+  --accent-primary-soft: rgba(200, 72, 120, 0.14);
+  --accent-primary-glow: rgba(200, 72, 120, 0.3);
+}
+
+[data-sign="sagittarius"] {
+  --accent-primary: #f08c40;
+  --accent-primary-soft: rgba(240, 140, 64, 0.14);
+  --accent-primary-glow: rgba(240, 140, 64, 0.3);
+}
+
+[data-sign="capricorn"] {
+  --accent-primary: #b8b8c8;
+  --accent-primary-soft: rgba(184, 184, 200, 0.14);
+  --accent-primary-glow: rgba(184, 184, 200, 0.28);
+}
+
+[data-sign="aquarius"] {
+  --accent-primary: #5ad8ff;
+  --accent-primary-soft: rgba(90, 216, 255, 0.14);
+  --accent-primary-glow: rgba(90, 216, 255, 0.3);
+}
+
+[data-sign="pisces"] {
+  --accent-primary: #b8d8c8;
+  --accent-primary-soft: rgba(184, 216, 200, 0.14);
+  --accent-primary-glow: rgba(184, 216, 200, 0.28);
+}
