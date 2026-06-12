@@ -9,8 +9,15 @@ import { LoginModal } from './LoginModal';
 import { NatalChart } from './charts/NatalChart';
 import { BodyGraph } from './charts/BodyGraph';
 import { ChartDetailDrawer, type ChartDetail } from './ChartDetailDrawer';
-import { PLANETS, SIGNS } from '@/data/astrology-explanations';
 import styles from './DetailPage.module.css';
+
+// Map Chinese zodiac sign -> English lowercase key, used both for theme
+// tinting (`data-sign`) and as a fallback identifier for the drawer.
+const CN_SIGN_TO_EN: Record<string, string> = {
+  '牡羊座': 'aries', '金牛座': 'taurus', '雙子座': 'gemini', '巨蟹座': 'cancer',
+  '獅子座': 'leo', '處女座': 'virgo', '天秤座': 'libra', '天蠍座': 'scorpio',
+  '射手座': 'sagittarius', '摩羯座': 'capricorn', '水瓶座': 'aquarius', '雙魚座': 'pisces',
+};
 
 interface Props {
   manualId: string;
@@ -317,43 +324,68 @@ function WesternRender({ data }: { data: any }) {
   const asc = data.ascendant;
   const mc = data.midheaven;
   const interpretations = data.interpretations || {};
-  
-  // Map planet names to interpretation keys
-  const nameToKey: Record<string, string> = {
-    '太陽': 'sun', '月亮': 'moon', '水星': 'mercury', '金星': 'venus',
-    '火星': 'mars', '木星': 'jupiter', '土星': 'saturn', '天王星': 'uranus',
-    '海王星': 'neptune', '冥王星': 'pluto'
-  };
-  
-  // Merge interpretations into planets
+
+  // Backend now returns `interpretations.planets: PlanetInterpretation[]`
+  // with full text + keywords + ruler_sign per placement. Match by Chinese name.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const aiPlanets: any[] = Array.isArray(interpretations.planets) ? interpretations.planets : [];
+  const planetInterpByName = new Map<string, Record<string, unknown>>();
+  for (const ap of aiPlanets) {
+    if (ap && typeof ap.name === 'string') planetInterpByName.set(ap.name, ap);
+  }
+
+  // Merge structured placement + interpretation onto each planet entry.
   const planets = (data.planets || []).map((p: Record<string, unknown>) => {
-    const key = nameToKey[p.name as string] || (p.name as string).toLowerCase();
-    const interp = interpretations[key];
+    const interp = planetInterpByName.get(p.name as string);
     return {
       ...p,
-      interpretation: typeof interp === 'string' ? interp : interp?.interpretation || p.interpretation || ''
+      interpretation: (interp?.interpretation as string) || (p.interpretation as string) || '',
+      keywords: (interp?.keywords as string[] | undefined) ?? [],
+      ruler_sign: (interp?.ruler_sign as string | undefined),
+      in_sign_detail: (interp?.in_sign_detail as string | undefined),
+      in_house_detail: (interp?.in_house_detail as string | undefined),
+      category: (interp?.category as string | undefined),
     };
   });
-  
+
   const aspects = data.aspects || [];
+  // Inline aspect interpretations from interpretations.aspects[] (matched by key).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const aiAspects: any[] = Array.isArray(interpretations.aspects) ? interpretations.aspects : [];
+  const aspectInterpByKey = new Map<string, Record<string, unknown>>();
+  for (const aa of aiAspects) {
+    if (!aa) continue;
+    const k = (aa.key as string) || `${aa.planet1}-${aa.aspect}-${aa.planet2}`;
+    aspectInterpByKey.set(k, aa);
+  }
+  const aspectsMerged = aspects.map((a: Record<string, unknown>) => {
+    const k = `${a.planet1}-${a.type || a.aspect}-${a.planet2}`;
+    const interp = aspectInterpByKey.get(k);
+    return {
+      ...a,
+      interpretation: (interp?.interpretation as string) || (a.interpretation as string) || '',
+    };
+  });
 
   return (
-    <WesternRenderInner 
-      asc={asc} 
-      mc={mc} 
-      planets={planets} 
-      aspects={aspects}
+    <WesternRenderInner
+      asc={asc}
+      ascInterp={interpretations.ascendant}
+      mc={mc}
+      planets={planets}
+      aspects={aspectsMerged}
       stelliums={data.stelliums}
       chartPattern={data.chart_pattern || data.patterns?.map((p: { name?: string; name_cn?: string }) => p.name || p.name_cn).filter(Boolean).join('、')}
       dominantElement={data.dominant_element}
-      summary={interpretations.general_overview || data.summary}
+      summary={interpretations.general_overview || interpretations.summary || data.summary}
     />
   );
 }
 
 // Inner component to use hooks properly
-function WesternRenderInner({ asc, mc, planets, aspects, stelliums, chartPattern, dominantElement, summary }: { 
-  asc: { sign: string; degree?: string } | undefined; 
+function WesternRenderInner({ asc, ascInterp, mc, planets, aspects, stelliums, chartPattern, dominantElement, summary }: {
+  asc: { sign: string; degree?: string } | undefined;
+  ascInterp?: { interpretation?: string; keywords?: string[] };
   mc: { sign: string; degree?: string } | undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   planets: any[];
@@ -366,49 +398,59 @@ function WesternRenderInner({ asc, mc, planets, aspects, stelliums, chartPattern
 }) {
   const [selectedDetail, setSelectedDetail] = useState<ChartDetail | null>(null);
 
-  // Handle planet click - show detail drawer
+  // Handle planet click - show detail drawer.
+  // All text now comes from backend (interpretations.planets[]) — no hardcoded fallback.
   const handlePlanetClick = useCallback((planet: { name: string; sign: string; degree: string | number; house: number; retrograde?: boolean; interpretation?: string }) => {
-    const planetKey = planet.name.toLowerCase().replace('太陽', 'sun').replace('月亮', 'moon')
-      .replace('水星', 'mercury').replace('金星', 'venus').replace('火星', 'mars')
-      .replace('木星', 'jupiter').replace('土星', 'saturn').replace('天王星', 'uranus')
-      .replace('海王星', 'neptune').replace('冥王星', 'pluto');
-    
-    const planetData = PLANETS[planetKey];
-    const signInterpretation = planetData?.signInterpretations?.[planet.sign] || '';
-    
+    // Find the merged planet entry (carries interpretation/keywords/ruler_sign from API).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const merged = planets.find((p: any) => p.name === planet.name) ?? planet;
+    const detailParts: string[] = [];
+    if (merged.in_sign_detail) detailParts.push(merged.in_sign_detail as string);
+    if (merged.in_house_detail) detailParts.push(merged.in_house_detail as string);
+
+    // Theme sign: prefer backend's ruler_sign, fall back to placement sign.
+    const themeSign = (merged.ruler_sign as string | undefined)?.toLowerCase()
+      ?? CN_SIGN_TO_EN[planet.sign];
+
     setSelectedDetail({
       type: 'planet',
-      id: planetKey,
+      id: (planet.name || '').toLowerCase(),
       title: `${planet.name} in ${planet.sign}`,
       subtitle: `第${planet.house}宮 · ${planet.degree}${planet.retrograde ? ' (逆行)' : ''}`,
-      category: planetData?.category || '行星',
-      keywords: planetData?.keywords || [],
-      description: planetData?.description || '',
-      interpretation: signInterpretation || planet.interpretation || '',
+      category: (merged.category as string | undefined) ?? '行星',
+      keywords: (merged.keywords as string[] | undefined) ?? [],
+      description: detailParts.join('\n\n') || (merged.interpretation as string | undefined) || '',
+      interpretation: detailParts.length > 0 ? (merged.interpretation as string | undefined) : undefined,
       advice: planet.retrograde ? '逆行期間適合回顧和反思相關主題，而非開始新事物。' : undefined,
+      sign: themeSign,
     });
-  }, []);
+  }, [planets]);
 
-  // Handle sign click - show detail drawer
+  // Handle sign click - show detail drawer. If clicked sign is the Asc,
+  // show ascendant interpretation (from API); otherwise open a minimal
+  // themed drawer (theme via data-sign on overlay).
   const handleSignClick = useCallback((signName: string) => {
-    const signKey = signName.replace('座', '').toLowerCase()
-      .replace('牡羊', 'aries').replace('金牛', 'taurus').replace('雙子', 'gemini')
-      .replace('巨蟹', 'cancer').replace('獅子', 'leo').replace('處女', 'virgo')
-      .replace('天秤', 'libra').replace('天蠍', 'scorpio').replace('射手', 'sagittarius')
-      .replace('摩羯', 'capricorn').replace('水瓶', 'aquarius').replace('雙魚', 'pisces');
-    
-    const signData = SIGNS[signKey];
-    
+    const signKey = CN_SIGN_TO_EN[signName] ?? signName.toLowerCase();
+    if (ascInterp?.interpretation && asc?.sign === signName) {
+      setSelectedDetail({
+        type: 'sign',
+        id: signKey,
+        title: `上升 ${signName}`,
+        subtitle: asc.degree,
+        keywords: ascInterp.keywords ?? [],
+        description: ascInterp.interpretation,
+        sign: signKey,
+      });
+      return;
+    }
     setSelectedDetail({
       type: 'sign',
       id: signKey,
-      title: signData?.name || signName,
-      subtitle: `${signData?.element || ''} · ${signData?.modality || ''}`,
-      category: `守護星：${signData?.ruling || ''}`,
-      keywords: signData?.keywords || [],
-      description: signData?.description || '',
+      title: signName,
+      description: '',
+      sign: signKey,
     });
-  }, []);
+  }, [asc, ascInterp]);
 
   return (
     <div className={styles.systemContent}>
