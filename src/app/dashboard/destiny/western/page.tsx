@@ -32,8 +32,9 @@ interface PlanetEntry {
   name_en?: string;
   sign: string;
   sign_en?: string;
-  degree: number;
+  degree?: number;        // used by NatalChart wheel only, never shown as text
   house?: number;
+  house_label?: string;
   retrograde?: boolean;
 }
 
@@ -85,7 +86,6 @@ interface MergedAspect {
 interface AscendantData {
   sign?: string;
   sign_en?: string;
-  degree?: number;
   interp?: AscendantInterpretation;
 }
 
@@ -304,7 +304,7 @@ export default function WesternPage() {
 
       const rawPlanets = (d.planets ?? []) as PlanetEntry[];
       const rawAspects = (d.aspects ?? []) as AspectEntry[];
-      const ascRaw = (d.ascendant ?? {}) as { sign?: string; sign_en?: string; degree?: number };
+      const ascRaw = (d.ascendant ?? {}) as { sign?: string; sign_en?: string };
 
       const aiPlanets = (interp.planets ?? []) as PlanetInterpretation[];
       const planetInterpByName = new Map<string, PlanetInterpretation>();
@@ -336,7 +336,6 @@ export default function WesternPage() {
         ascendant: {
           sign: ascRaw.sign,
           sign_en: ascRaw.sign_en,
-          degree: ascRaw.degree,
           interp: ascInt,
         },
         midheaven_interpretation: mcInt.interpretation,
@@ -373,8 +372,7 @@ export default function WesternPage() {
     const meta = (
       <>
         {entry.sign}
-        {typeof entry.degree === 'number' && <> · {entry.degree.toFixed(1)}°</>}
-        {entry.house && <> · 第 {entry.house} 宮</>}
+        {entry.house_label ? <> · {entry.house_label}</> : entry.house ? <> · 第 {entry.house} 宮</> : null}
       </>
     );
 
@@ -410,7 +408,6 @@ export default function WesternPage() {
       <ExpandableCard
         key={key}
         title={title}
-        meta={typeof entry.orb === 'number' ? `orb ${entry.orb.toFixed(1)}°` : undefined}
         accent={accent}
         keywords={interp?.keywords}
         intro={intro}
@@ -425,12 +422,10 @@ export default function WesternPage() {
     const themeKey = signToEn(vm.ascendant.sign, vm.ascendant.sign_en);
     const accent = (themeKey && SIGN_ACCENT[themeKey]) ?? '#ec4899';
     const { intro, rest } = splitBody(interp?.interpretation);
-    const meta = typeof vm.ascendant.degree === 'number' ? `${vm.ascendant.degree.toFixed(1)}°` : undefined;
     return (
       <ExpandableCard
         icon="ASC"
         title={`上升 ${vm.ascendant.sign}`}
-        meta={meta}
         accent={accent}
         keywords={interp?.keywords}
         intro={intro}
@@ -513,7 +508,7 @@ export default function WesternPage() {
                     planets={vm.planets.map(p => ({
                       name: p.entry.name,
                       sign: p.entry.sign,
-                      degree: p.entry.degree,
+                      degree: p.entry.degree ?? 0,
                       house: p.entry.house ?? 1,
                       retrograde: p.entry.retrograde,
                     }))}
