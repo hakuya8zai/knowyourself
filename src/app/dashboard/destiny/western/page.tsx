@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthContext';
 import { getDetailByBirth } from '@/lib/api';
 import { NatalChart } from '@/components/charts/NatalChart';
-import { ChartDetailDrawer, type ChartDetail } from '@/components/ChartDetailDrawer';
 import Link from 'next/link';
 import styles from '../destiny.module.css';
 
@@ -50,7 +49,7 @@ interface PlanetInterpretation {
   name_en?: string;
   sign?: string;
   house?: number;
-  ruler_sign?: string;          // English lowercase (aries, taurus, ...) — drives theme
+  ruler_sign?: string;
   interpretation: string;
   keywords?: string[];
   in_sign_detail?: string;
@@ -117,16 +116,158 @@ function signToEn(sign?: string, fallback?: string): string | undefined {
   return CN_SIGN_TO_EN[sign] ?? sign.toLowerCase();
 }
 
-/**
- * Decide which sign drives the drawer theme for a planet placement.
- * Backend supplies `ruler_sign`; fallback to the planet's own sign so we
- * never end up theme-less.
- */
 function planetThemeSign(planet: MergedPlanet): string | undefined {
   const ruler = planet.interp?.ruler_sign?.toLowerCase();
   if (ruler) return ruler;
   return signToEn(planet.entry.sign, planet.entry.sign_en);
 }
+
+/** Split a `\n\n`-separated body into the intro paragraph + the rest. */
+function splitBody(body?: string): { intro: string; rest: string[] } {
+  if (!body) return { intro: '', rest: [] };
+  const paras = body.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  return { intro: paras[0] ?? '', rest: paras.slice(1) };
+}
+
+/* ============================================================
+   Visual hierarchy
+   --------------------------------------------------------------
+   - Card surface (always visible): icon + title + meta + keywords + intro
+   - Expand button (toggle): rest of body_text + secondary in_sign / in_house
+   - Drawer is gone — everything important reads at-a-glance.
+   ============================================================ */
+
+type ExpandableCardProps = {
+  /** Inline chip / icon — string or React node */
+  icon?: React.ReactNode;
+  /** Headline, e.g. 「太陽 巨蟹」 */
+  title: React.ReactNode;
+  /** Right-aligned meta, e.g. 「6.2° · 8 宮」 */
+  meta?: React.ReactNode;
+  /** Theme color string (CSS color) — drives accent + border */
+  accent?: string;
+  keywords?: string[];
+  intro?: string;
+  rest?: string[];
+  /** Optional extra blocks always visible at the bottom (e.g. retrograde note) */
+  footer?: React.ReactNode;
+};
+
+function ExpandableCard({ icon, title, meta, accent, keywords, intro, rest, footer }: ExpandableCardProps) {
+  const [open, setOpen] = useState(false);
+  const accentColor = accent ?? 'rgba(255,255,255,0.7)';
+  const hasMore = (rest && rest.length > 0);
+  return (
+    <article
+      style={{
+        padding: '1rem 1.1rem',
+        background: 'rgba(255,255,255,0.04)',
+        borderRadius: 14,
+        border: '1px solid rgba(255,255,255,0.07)',
+        borderLeft: `3px solid ${accentColor}`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.6rem',
+      }}
+    >
+      <header style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem', flexWrap: 'wrap' }}>
+        {icon && <span style={{ fontSize: '1.25rem', color: accentColor }}>{icon}</span>}
+        <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600, flex: 1, minWidth: 0 }}>
+          {title}
+        </h3>
+        {meta && (
+          <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>
+            {meta}
+          </span>
+        )}
+      </header>
+
+      {keywords && keywords.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+          {keywords.map((kw, i) => (
+            <span
+              key={i}
+              style={{
+                fontSize: '0.72rem',
+                padding: '0.15rem 0.55rem',
+                borderRadius: 999,
+                background: 'rgba(255,255,255,0.06)',
+                color: accentColor,
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              {kw}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {intro && (
+        <p style={{ margin: 0, lineHeight: 1.75, color: 'rgba(255,255,255,0.85)', fontSize: '0.92rem' }}>
+          {intro}
+        </p>
+      )}
+
+      {open && rest && rest.map((para, i) => (
+        <p key={i} style={{ margin: 0, lineHeight: 1.75, color: 'rgba(255,255,255,0.75)', fontSize: '0.9rem' }}>
+          {para}
+        </p>
+      ))}
+
+      {footer && <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.55)' }}>{footer}</div>}
+
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          style={{
+            alignSelf: 'flex-start',
+            marginTop: '0.1rem',
+            padding: '0.3rem 0.7rem',
+            background: 'transparent',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: 999,
+            color: accentColor,
+            fontSize: '0.75rem',
+            cursor: 'pointer',
+          }}
+          aria-expanded={open}
+        >
+          {open ? '收起' : `展開閱讀（${rest!.length + 1} 段）`}
+        </button>
+      )}
+    </article>
+  );
+}
+
+/** Color-per-sign accent for placement headers / borders. */
+const SIGN_ACCENT: Record<string, string> = {
+  aries: '#ff5a3c',
+  taurus: '#c9a55a',
+  gemini: '#ffd75a',
+  cancer: '#c8d8f0',
+  leo: '#f0b450',
+  virgo: '#8ac08a',
+  libra: '#f0c8d4',
+  scorpio: '#c84878',
+  sagittarius: '#f08c40',
+  capricorn: '#b8b8c8',
+  aquarius: '#5ad8ff',
+  pisces: '#b8d8c8',
+};
+
+const PLANET_GLYPH: Record<string, string> = {
+  '太陽': '☉', '月亮': '☽', '水星': '☿', '金星': '♀', '火星': '♂',
+  '木星': '♃', '土星': '♄', '天王星': '♅', '海王星': '♆', '冥王星': '♇',
+};
+
+const ASPECT_COLOR: Record<string, string> = {
+  '合相': '#f59e0b',
+  '對分相': '#ef4444',
+  '三分相': '#10b981',
+  '四分相': '#a78bfa',
+  '六分相': '#22d3ee',
+};
 
 /* ============================================================
    Page
@@ -139,7 +280,6 @@ export default function WesternPage() {
   const [dataLoading, setDataLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'planets' | 'aspects'>('overview');
-  const [selectedDetail, setSelectedDetail] = useState<ChartDetail | null>(null);
 
   const tabs: Array<{ id: 'overview' | 'planets' | 'aspects'; label: string }> = [
     { id: 'overview', label: '總覽' },
@@ -147,7 +287,6 @@ export default function WesternPage() {
     { id: 'aspects', label: '相位' },
   ];
 
-  // Redirect if not logged in
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/');
@@ -167,7 +306,6 @@ export default function WesternPage() {
       const rawAspects = (d.aspects ?? []) as AspectEntry[];
       const ascRaw = (d.ascendant ?? {}) as { sign?: string; sign_en?: string; degree?: number };
 
-      // Match interpretation -> structured entry by planet name (Chinese name)
       const aiPlanets = (interp.planets ?? []) as PlanetInterpretation[];
       const planetInterpByName = new Map<string, PlanetInterpretation>();
       for (const ap of aiPlanets) {
@@ -178,7 +316,6 @@ export default function WesternPage() {
         interp: planetInterpByName.get(p.name),
       }));
 
-      // Match aspect interpretations by key `${p1}-${aspect}-${p2}` (matches AI output)
       const aiAspects = (interp.aspects ?? []) as AspectInterpretation[];
       const aspectInterpByKey = new Map<string, AspectInterpretation>();
       for (const aa of aiAspects) {
@@ -222,77 +359,90 @@ export default function WesternPage() {
     }
   }, [hasBirthInfo, vm, dataLoading, error, fetchWesternData]);
 
-  /* ----- Drawer openers ----- */
+  /* ----- Card builders ----- */
 
-  const openPlanetDetail = useCallback((p: MergedPlanet) => {
+  const planetCard = (p: MergedPlanet, key: React.Key) => {
     const { entry, interp } = p;
-    const houseLabel = entry.house ? `第 ${entry.house} 宮` : '';
-    const degreeLabel = typeof entry.degree === 'number' ? `${entry.degree.toFixed(1)}°` : '';
-    const subtitle = [degreeLabel, houseLabel].filter(Boolean).join(' · ');
+    const themeKey = planetThemeSign(p);
+    const accent = (themeKey && SIGN_ACCENT[themeKey]) ?? '#94a3b8';
+    const { intro, rest } = splitBody(interp?.interpretation);
+    const extraDetails: string[] = [];
+    if (interp?.in_sign_detail) extraDetails.push(interp.in_sign_detail);
+    if (interp?.in_house_detail) extraDetails.push(interp.in_house_detail);
 
-    // Combine in_sign_detail + in_house_detail into the description block.
-    const detailParts: string[] = [];
-    if (interp?.in_sign_detail) detailParts.push(interp.in_sign_detail);
-    if (interp?.in_house_detail) detailParts.push(interp.in_house_detail);
+    const meta = (
+      <>
+        {entry.sign}
+        {typeof entry.degree === 'number' && <> · {entry.degree.toFixed(1)}°</>}
+        {entry.house && <> · 第 {entry.house} 宮</>}
+      </>
+    );
 
-    setSelectedDetail({
-      type: 'planet',
-      id: entry.name_en ?? entry.name,
-      title: `${entry.name} in ${entry.sign}`,
-      subtitle: subtitle || undefined,
-      keywords: interp?.keywords,
-      description: detailParts.join('\n\n') || interp?.interpretation || '',
-      interpretation: detailParts.length > 0 ? interp?.interpretation : undefined,
-      advice: entry.retrograde ? '逆行期間適合回顧與整合，而非開始全新主題。' : undefined,
-      sign: planetThemeSign(p),
-    });
-  }, []);
+    const footer = entry.retrograde
+      ? <span style={{ color: '#f87171' }}>℞ 逆行 — 適合回顧與整合，不宜起新題</span>
+      : undefined;
 
-  const openSignDetail = useCallback((signName: string) => {
-    // For sign clicks on the wheel: if it matches the asc sign, show asc interp;
-    // otherwise just open a minimal drawer themed by that sign.
-    const enKey = signToEn(signName);
-    if (vm?.ascendant.interp && vm.ascendant.sign && signName === vm.ascendant.sign) {
-      setSelectedDetail({
-        type: 'sign',
-        id: enKey ?? signName,
-        title: `上升 ${vm.ascendant.sign}`,
-        subtitle: typeof vm.ascendant.degree === 'number' ? `${vm.ascendant.degree.toFixed(1)}°` : undefined,
-        keywords: vm.ascendant.interp.keywords,
-        description: vm.ascendant.interp.interpretation,
-        sign: enKey,
-      });
-      return;
-    }
-    setSelectedDetail({
-      type: 'sign',
-      id: enKey ?? signName,
-      title: signName,
-      description: '',
-      sign: enKey,
-    });
-  }, [vm]);
+    return (
+      <ExpandableCard
+        key={key}
+        icon={PLANET_GLYPH[entry.name] ?? '★'}
+        title={entry.name}
+        meta={meta}
+        accent={accent}
+        keywords={interp?.keywords}
+        intro={intro}
+        rest={[...rest, ...extraDetails]}
+        footer={footer}
+      />
+    );
+  };
 
-  const openAspectDetail = useCallback((a: MergedAspect) => {
+  const aspectCard = (a: MergedAspect, key: React.Key) => {
     const { entry, interp } = a;
-    setSelectedDetail({
-      type: 'aspect',
-      id: `${entry.planet1}-${entry.aspect}-${entry.planet2}`,
-      title: `${entry.planet1} ${entry.aspect} ${entry.planet2}`,
-      subtitle: typeof entry.orb === 'number' ? `orb ${entry.orb.toFixed(1)}°` : undefined,
-      keywords: interp?.keywords,
-      description: interp?.interpretation ?? '',
-    });
-  }, []);
+    const accent = ASPECT_COLOR[entry.aspect] ?? '#a78bfa';
+    const { intro, rest } = splitBody(interp?.interpretation);
+    const title = (
+      <>
+        {entry.planet1} <span style={{ color: accent, margin: '0 0.35rem' }}>{entry.aspect}</span> {entry.planet2}
+      </>
+    );
+    return (
+      <ExpandableCard
+        key={key}
+        title={title}
+        meta={typeof entry.orb === 'number' ? `orb ${entry.orb.toFixed(1)}°` : undefined}
+        accent={accent}
+        keywords={interp?.keywords}
+        intro={intro}
+        rest={rest}
+      />
+    );
+  };
+
+  const ascendantCard = () => {
+    if (!vm?.ascendant.sign) return null;
+    const interp = vm.ascendant.interp;
+    const themeKey = signToEn(vm.ascendant.sign, vm.ascendant.sign_en);
+    const accent = (themeKey && SIGN_ACCENT[themeKey]) ?? '#ec4899';
+    const { intro, rest } = splitBody(interp?.interpretation);
+    const meta = typeof vm.ascendant.degree === 'number' ? `${vm.ascendant.degree.toFixed(1)}°` : undefined;
+    return (
+      <ExpandableCard
+        icon="ASC"
+        title={`上升 ${vm.ascendant.sign}`}
+        meta={meta}
+        accent={accent}
+        keywords={interp?.keywords}
+        intro={intro}
+        rest={rest}
+      />
+    );
+  };
 
   /* ----- Render ----- */
 
-  if (authLoading) {
-    return <div className={styles.loading}>載入中...</div>;
-  }
-  if (!user) {
-    return null;
-  }
+  if (authLoading) return <div className={styles.loading}>載入中...</div>;
+  if (!user) return null;
 
   return (
     <div className={styles.container}>
@@ -346,9 +496,7 @@ export default function WesternPage() {
           </Link>
         </div>
       ) : dataLoading ? (
-        <div className={styles.loading}>
-          <p>正在計算星盤...</p>
-        </div>
+        <div className={styles.loading}><p>正在計算星盤...</p></div>
       ) : error ? (
         <div className={styles.setupBanner}>
           <p>{error}</p>
@@ -357,10 +505,10 @@ export default function WesternPage() {
       ) : vm ? (
         <>
           {activeTab === 'overview' && (
-            <>
-              {/* Interactive natal chart wheel */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Natal chart wheel — visual reference; click does nothing now (all content is inline below). */}
               {vm.planets.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
                   <NatalChart
                     planets={vm.planets.map(p => ({
                       name: p.entry.name,
@@ -370,180 +518,79 @@ export default function WesternPage() {
                       retrograde: p.entry.retrograde,
                     }))}
                     ascendant={vm.ascendant.sign ? { sign: vm.ascendant.sign } : undefined}
-                    onPlanetClick={(clicked) => {
-                      const match = vm.planets.find(p => p.entry.name === clicked.name);
-                      if (match) openPlanetDetail(match);
-                    }}
-                    onSignClick={openSignDetail}
                   />
                 </div>
               )}
 
-              {/* Three luminary cards (Sun / Moon / Asc) — clickable */}
-              <div className={styles.grid}>
-                {(() => {
-                  const sun = vm.planets.find(p => p.entry.name === '太陽' || p.entry.name_en === 'sun');
-                  const moon = vm.planets.find(p => p.entry.name === '月亮' || p.entry.name_en === 'moon');
-                  return (
-                    <>
-                      {sun && (
-                        <button
-                          type="button"
-                          onClick={() => openPlanetDetail(sun)}
-                          className={styles.card}
-                          style={{ '--accent-color': '#f59e0b', cursor: 'pointer', font: 'inherit', textAlign: 'center', color: 'inherit' } as React.CSSProperties}
-                        >
-                          <div className={styles.cardIcon}>☉</div>
-                          <h2>太陽 {sun.entry.sign}</h2>
-                          {sun.entry.degree !== undefined && <p>{sun.entry.degree.toFixed(1)}°</p>}
-                        </button>
-                      )}
-                      {moon && (
-                        <button
-                          type="button"
-                          onClick={() => openPlanetDetail(moon)}
-                          className={styles.card}
-                          style={{ '--accent-color': '#94a3b8', cursor: 'pointer', font: 'inherit', textAlign: 'center', color: 'inherit' } as React.CSSProperties}
-                        >
-                          <div className={styles.cardIcon}>☽</div>
-                          <h2>月亮 {moon.entry.sign}</h2>
-                          {moon.entry.degree !== undefined && <p>{moon.entry.degree.toFixed(1)}°</p>}
-                        </button>
-                      )}
-                      {vm.ascendant.sign && (
-                        <button
-                          type="button"
-                          onClick={() => vm.ascendant.sign && openSignDetail(vm.ascendant.sign)}
-                          className={styles.card}
-                          style={{ '--accent-color': '#ec4899', cursor: 'pointer', font: 'inherit', textAlign: 'center', color: 'inherit' } as React.CSSProperties}
-                        >
-                          <div className={styles.cardIcon}>ASC</div>
-                          <h2>上升 {vm.ascendant.sign}</h2>
-                          {vm.ascendant.degree !== undefined && <p>{vm.ascendant.degree.toFixed(1)}°</p>}
-                        </button>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
+              {/* Three luminaries inline */}
+              {(() => {
+                const sun = vm.planets.find(p => p.entry.name === '太陽' || p.entry.name_en === 'sun');
+                const moon = vm.planets.find(p => p.entry.name === '月亮' || p.entry.name_en === 'moon');
+                return (
+                  <>
+                    {sun && planetCard(sun, 'sun-card')}
+                    {moon && planetCard(moon, 'moon-card')}
+                    {ascendantCard()}
+                  </>
+                );
+              })()}
 
-              {/* Ascendant / Midheaven inline summaries */}
-              {(vm.ascendant.interp?.interpretation || vm.midheaven_interpretation) && (
-                <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {vm.ascendant.interp?.interpretation && (
-                    <div style={{ padding: '1rem', background: 'rgba(236,72,153,0.08)', border: '1px solid rgba(236,72,153,0.2)', borderRadius: '12px' }}>
-                      <h4 style={{ marginBottom: '0.5rem', color: '#ec4899' }}>上升 ({vm.ascendant.sign})</h4>
-                      <p style={{ lineHeight: 1.7, color: 'rgba(255,255,255,0.85)' }}>{vm.ascendant.interp.interpretation}</p>
-                    </div>
-                  )}
-                  {vm.midheaven_interpretation && (
-                    <div style={{ padding: '1rem', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '12px' }}>
-                      <h4 style={{ marginBottom: '0.5rem', color: '#f59e0b' }}>天頂 (MC)</h4>
-                      <p style={{ lineHeight: 1.7, color: 'rgba(255,255,255,0.85)' }}>{vm.midheaven_interpretation}</p>
-                    </div>
-                  )}
-                </div>
+              {/* Midheaven inline if available */}
+              {vm.midheaven_interpretation && (
+                <ExpandableCard
+                  icon="MC"
+                  title="天頂 (Midheaven)"
+                  accent="#f59e0b"
+                  intro={splitBody(vm.midheaven_interpretation).intro}
+                  rest={splitBody(vm.midheaven_interpretation).rest}
+                />
               )}
 
-              {/* Chart pattern / dominant element */}
               {(vm.chart_pattern || vm.dominant_element) && (
-                <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.04)', borderRadius: '12px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                <div style={{
+                  padding: '1rem',
+                  background: 'rgba(255,255,255,0.04)',
+                  borderRadius: 12,
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '1rem',
+                }}>
                   {vm.chart_pattern && (
                     <div>
                       <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>星盤圖形</div>
-                      <p style={{ lineHeight: 1.5, fontSize: '0.9rem' }}>{vm.chart_pattern}</p>
+                      <p style={{ lineHeight: 1.5, fontSize: '0.9rem', margin: 0 }}>{vm.chart_pattern}</p>
                     </div>
                   )}
                   {vm.dominant_element && (
                     <div>
                       <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>主導元素</div>
-                      <p style={{ lineHeight: 1.5, fontSize: '0.9rem' }}>{vm.dominant_element}</p>
+                      <p style={{ lineHeight: 1.5, fontSize: '0.9rem', margin: 0 }}>{vm.dominant_element}</p>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Summary */}
               {vm.summary && (
-                <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.04)', borderRadius: '12px' }}>
-                  <h3 style={{ marginBottom: '0.5rem' }}>整體總結</h3>
-                  <p style={{ lineHeight: 1.7, color: 'rgba(255,255,255,0.85)' }}>{vm.summary}</p>
+                <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.04)', borderRadius: 12 }}>
+                  <h3 style={{ marginBottom: '0.5rem', marginTop: 0 }}>整體總結</h3>
+                  <p style={{ lineHeight: 1.7, color: 'rgba(255,255,255,0.85)', margin: 0 }}>{vm.summary}</p>
                 </div>
               )}
-
-              {/* Note: 六段 readings (personality/career/...) removed —
-                  long narrative readings now flow via per-placement drawer text. */}
-            </>
+            </div>
           )}
 
           {activeTab === 'planets' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {vm.planets.map((p, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => openPlanetDetail(p)}
-                  style={{
-                    padding: '0.75rem 1rem',
-                    background: 'rgba(255,255,255,0.05)',
-                    borderRadius: '10px',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    color: 'inherit',
-                    font: 'inherit',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    width: '100%',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <span style={{ fontWeight: 600 }}>
-                      {p.entry.name} {p.entry.retrograde && <span style={{ color: '#f87171' }}>℞</span>}
-                    </span>
-                    <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>
-                      {p.entry.sign} {typeof p.entry.degree === 'number' ? `${p.entry.degree.toFixed(1)}°` : ''} {p.entry.house ? `· ${p.entry.house} 宮` : ''}
-                    </span>
-                  </div>
-                  {p.interp?.keywords && p.interp.keywords.length > 0 && (
-                    <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'rgba(255,255,255,0.55)' }}>
-                      {p.interp.keywords.join(' · ')}
-                    </div>
-                  )}
-                </button>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {vm.planets.map((p, i) => planetCard(p, i))}
             </div>
           )}
 
           {activeTab === 'aspects' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {vm.aspects.map((a, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => openAspectDetail(a)}
-                  style={{
-                    padding: '0.75rem 1rem',
-                    background: 'rgba(255,255,255,0.05)',
-                    borderRadius: '10px',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    color: 'inherit',
-                    font: 'inherit',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    width: '100%',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <span>
-                      <span style={{ fontWeight: 500 }}>{a.entry.planet1}</span>
-                      <span style={{ margin: '0 0.5rem', color: '#a78bfa' }}>{a.entry.aspect}</span>
-                      <span style={{ fontWeight: 500 }}>{a.entry.planet2}</span>
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>
-                      orb {typeof a.entry.orb === 'number' ? a.entry.orb.toFixed(1) : '?'}°
-                    </span>
-                  </div>
-                </button>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {vm.aspects.length > 0
+                ? vm.aspects.map((a, i) => aspectCard(a, i))
+                : <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginTop: '2rem' }}>沒有偵測到主要相位</p>
+              }
             </div>
           )}
 
@@ -565,12 +612,6 @@ export default function WesternPage() {
           </div>
         </>
       ) : null}
-
-      {/* Slide-up drawer for placement details. Themed by sign via data-sign. */}
-      <ChartDetailDrawer
-        detail={selectedDetail}
-        onClose={() => setSelectedDetail(null)}
-      />
     </div>
   );
 }
