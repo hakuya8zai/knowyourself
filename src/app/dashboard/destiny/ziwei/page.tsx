@@ -51,6 +51,8 @@ interface SihuaInterp {
 interface PatternInterp {
   id: string;
   name: string;
+  category?: string;
+  polarity?: 'auspicious' | 'caution';
   interpretation: string;
   keywords?: string[];
 }
@@ -95,8 +97,16 @@ const SIHUA_COLOR: Record<string, string> = {
   化忌: '#ef4444', // 忌 — 阻礙、課題
 };
 
-// Pattern categories that read as cautionary (vs auspicious).
+// Fallback only: pattern names that read as cautionary, used when the
+// backend doesn't supply an explicit `polarity` (older cached responses).
 const CAUTION_HINT = /破|凶|勞|孤|刑|災|飄|泊|是非|感情|辛苦|貧/;
+
+// Prefer the backend's controlled `polarity` signal; fall back to the
+// name heuristic for responses cached before polarity was added.
+function patternIsCaution(p: PatternInterp): boolean {
+  if (p.polarity) return p.polarity === 'caution';
+  return CAUTION_HINT.test(p.category ?? p.name);
+}
 
 function starColor(name?: string): string {
   return (name && STAR_ELEMENT_COLOR[name]) ?? '#94a3b8';
@@ -436,7 +446,7 @@ export default function ZiweiPage() {
   const renderPatternDetail = () => {
     const p = patternItems.find(x => x.id === selPattern) ?? patternItems[0];
     if (!p) return <EmptyPanel message="尚無格局詳解" />;
-    const accent = CAUTION_HINT.test(p.name) ? '#f87171' : '#f5b942';
+    const accent = patternIsCaution(p) ? '#f87171' : '#f5b942';
     return (
       <article style={panelStyle(accent)}>
         <h3 style={titleStyle}><span style={{ color: accent }}>{p.name}</span></h3>
@@ -606,7 +616,7 @@ export default function ZiweiPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={chipRowStyle}>
                 {patternItems.map((p) => {
-                  const accent = CAUTION_HINT.test(p.name) ? '#f87171' : '#f5b942';
+                  const accent = patternIsCaution(p) ? '#f87171' : '#f5b942';
                   return (
                     <Chip
                       key={p.id}
