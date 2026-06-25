@@ -231,6 +231,13 @@ export default function ZiweiPage() {
     if (!birthInfo?.birth_date) return;
     setDataLoading(true);
     setError(null);
+    // Reset chip selections so a fresh chart deterministically defaults to
+    // its first chip per tab, rather than holding a now-invalid id from the
+    // previous chart until the default-select effect re-validates.
+    setSelStar(null);
+    setSelPalace(null);
+    setSelSihua(null);
+    setSelPattern(null);
     try {
       const result = await getDetailByBirth('ziwei', birthInfo);
       const d = result.data as Record<string, unknown>;
@@ -534,7 +541,11 @@ export default function ZiweiPage() {
           </nav>
 
           {/* === Tab body === */}
-          {activeTab === 'stars' && (
+          {tabs.length === 0 && (
+            <EmptyPanel message="尚無詳解資料 — 命盤已排出，但詳細解析尚在準備中，請稍後重新排盤。" />
+          )}
+
+          {activeTab === 'stars' && starItems.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={chipRowStyle}>
                 {starItems.map((s) => (
@@ -551,7 +562,7 @@ export default function ZiweiPage() {
             </div>
           )}
 
-          {activeTab === 'palaces' && (
+          {activeTab === 'palaces' && palaceItems.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={chipRowStyle}>
                 {palaceItems.map((p) => (
@@ -560,7 +571,7 @@ export default function ZiweiPage() {
                     active={selPalace === p.pinyin}
                     accent="#c084fc"
                     label={p.name}
-                    sublabel={p.stars && p.stars.length ? p.stars.map(st => st.name).join('') : (p.branch ? `${p.branch}宮` : undefined)}
+                    sublabel={p.stars && p.stars.length ? p.stars.map(st => st.name).join('·') : (p.branch ? `${p.branch}宮` : undefined)}
                     onClick={() => setSelPalace(p.pinyin)}
                   />
                 ))}
@@ -569,7 +580,7 @@ export default function ZiweiPage() {
             </div>
           )}
 
-          {activeTab === 'sihua' && (
+          {activeTab === 'sihua' && sihuaItems.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={chipRowStyle}>
                 {sihuaItems.map((s) => {
@@ -591,7 +602,7 @@ export default function ZiweiPage() {
             </div>
           )}
 
-          {activeTab === 'patterns' && (
+          {activeTab === 'patterns' && patternItems.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={chipRowStyle}>
                 {patternItems.map((p) => {
