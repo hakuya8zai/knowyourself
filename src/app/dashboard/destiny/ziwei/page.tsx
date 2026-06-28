@@ -30,8 +30,16 @@ interface PalaceInterp {
   keywords?: string[];
   stars: PalaceStarInterp[];
   minor_stars?: string[];
+  minor_stars_detail?: MinorStarDetail[];
   sihua_in_palace?: string[];
   borrowed?: { from_palace: string; stars: PalaceStarInterp[] };
+}
+
+interface MinorStarDetail {
+  name: string;
+  pinyin: string;
+  polarity: 'ji' | 'sha' | 'neutral';
+  reading: string;
 }
 
 interface SihuaInterp {
@@ -467,11 +475,37 @@ export default function ZiweiPage() {
           </details>
         )}
 
-        {palace.minor_stars && palace.minor_stars.length > 0 && (
-          <div style={{ fontSize: '0.76rem', color: 'rgba(255,255,255,0.45)' }}>
-            輔星：{palace.minor_stars.join('、')}
+        {/* 六吉六煞 — interpreted, not just listed */}
+        {palace.minor_stars_detail && palace.minor_stars_detail.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {palace.minor_stars_detail.map(ms => {
+              const c = ms.polarity === 'ji' ? '#10b981' : ms.polarity === 'sha' ? '#f0913e' : '#9aa4b2';
+              const tag = ms.polarity === 'ji' ? '吉星' : ms.polarity === 'sha' ? '煞星' : '助星';
+              return (
+                <details key={ms.pinyin} style={{ padding: '0.5rem 0.7rem', borderRadius: 8, background: `${c}10`, borderLeft: `3px solid ${c}` }}>
+                  <summary style={{ cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600, color: c }}>
+                    {ms.name}<span style={{ fontSize: '0.7rem', fontWeight: 400, marginLeft: '0.35rem', opacity: 0.8 }}>{tag}</span>
+                  </summary>
+                  <p style={{ margin: '0.5rem 0 0', fontSize: '0.84rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.75)' }}>
+                    {ms.reading}
+                  </p>
+                </details>
+              );
+            })}
           </div>
         )}
+
+        {/* any remaining minor stars without a reading — listed only */}
+        {(() => {
+          const detailed = new Set((palace.minor_stars_detail ?? []).map(m => m.name));
+          const rest = (palace.minor_stars ?? []).filter(s => !detailed.has(s));
+          if (rest.length === 0) return null;
+          return (
+            <div style={{ fontSize: '0.76rem', color: 'rgba(255,255,255,0.45)' }}>
+              其他輔星：{rest.join('、')}
+            </div>
+          );
+        })()}
       </section>
     );
   };
