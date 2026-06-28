@@ -16,6 +16,7 @@ interface PalaceStarInterp {
   name: string;
   pinyin: string;
   brightness?: string;  // 廟/旺/得地/利/平/不/陷
+  brightness_reading?: string;  // tier-specific reading of that brightness
   interpretation: string;
   keywords?: string[];
 }
@@ -24,11 +25,21 @@ interface PalaceInterp {
   name: string;
   pinyin: string;
   branch?: string;
+  branch_index?: number;
   interpretation: string;
   keywords?: string[];
   stars: PalaceStarInterp[];
   minor_stars?: string[];
+  minor_stars_detail?: MinorStarDetail[];
   sihua_in_palace?: string[];
+  borrowed?: { from_palace: string; stars: PalaceStarInterp[] };
+}
+
+interface MinorStarDetail {
+  name: string;
+  pinyin: string;
+  polarity: 'ji' | 'sha' | 'neutral';
+  reading: string;
 }
 
 interface SihuaInterp {
@@ -63,6 +74,7 @@ interface ZiweiViewModel {
   palaces: PalaceInterp[];
   sihua: SihuaInterp[];
   patterns: PatternInterp[];
+  metaExplain?: Record<string, string>;
   calculation_method?: string;
 }
 
@@ -244,6 +256,7 @@ export default function ZiweiPage() {
         palaces: (interp.palaces ?? []) as PalaceInterp[],
         sihua: (interp.sihua ?? []) as SihuaInterp[],
         patterns: (interp.patterns ?? []) as PatternInterp[],
+        metaExplain: (interp.meta_explain ?? undefined) as Record<string, string> | undefined,
         calculation_method: chart.calculation_method as string | undefined,
       });
     } catch (err) {
@@ -377,12 +390,73 @@ export default function ZiweiPage() {
                     </span>
                     <BrightnessTag level={st.brightness} />
                   </div>
-                  {st.brightness && BRIGHTNESS_INFO[st.brightness] && (
-                    <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.55)' }}>
-                      廟旺・{st.brightness}：{BRIGHTNESS_INFO[st.brightness].note}
+                  <Paragraphs body={st.interpretation} dim />
+                  {/* brightness-specific reading — same star reads differently 廟旺 vs 陷 */}
+                  {st.brightness && (st.brightness_reading || BRIGHTNESS_INFO[st.brightness]) && (
+                    <div
+                      style={{
+                        marginTop: '0.15rem', padding: '0.55rem 0.7rem', borderRadius: 8,
+                        background: `${BRIGHTNESS_INFO[st.brightness] ? BRIGHTNESS_COLOR[BRIGHTNESS_INFO[st.brightness].tone] : '#9aa4b2'}12`,
+                        display: 'flex', flexDirection: 'column', gap: '0.3rem',
+                      }}
+                    >
+                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: BRIGHTNESS_INFO[st.brightness] ? BRIGHTNESS_COLOR[BRIGHTNESS_INFO[st.brightness].tone] : '#9aa4b2' }}>
+                        {st.name}在此{st.brightness}
+                        {BRIGHTNESS_INFO[st.brightness] ? `・${BRIGHTNESS_INFO[st.brightness].note}` : ''}
+                      </div>
+                      {st.brightness_reading && (
+                        <p style={{ margin: 0, fontSize: '0.86rem', lineHeight: 1.75, color: 'rgba(255,255,255,0.78)' }}>
+                          {st.brightness_reading}
+                        </p>
+                      )}
                     </div>
                   )}
-                  <Paragraphs body={st.interpretation} dim />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* 四化 woven in — 生年四化 landing in this palace, read in context */}
+        {(() => {
+          const inPalace = (vm?.sihua ?? []).filter(s =>
+            (palace.sihua_in_palace ?? []).includes(s.hua)
+            && ((palace.stars ?? []).some(st => st.name === s.star) || (palace.minor_stars ?? []).includes(s.star))
+            && (s.interpretation ?? '').trim().length > 0
+          );
+          if (inPalace.length === 0) return null;
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {inPalace.map(s => {
+                const hc = SIHUA_COLOR[s.hua] ?? '#c084fc';
+                return (
+                  <div key={`${s.star_pinyin}_${s.hua_pinyin}`} style={{ padding: '0.6rem 0.75rem', borderRadius: 8, background: `${hc}12`, borderLeft: `3px solid ${hc}`, display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: hc }}>
+                      生年四化落在這裡：{s.star}<span style={{ marginLeft: '0.2rem' }}>{s.hua}</span>
+                    </div>
+                    <Paragraphs body={s.interpretation} dim />
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
+        {/* 空宮借對宮 — read the opposite palace's stars */}
+        {palace.stars.length === 0 && palace.borrowed && palace.borrowed.stars.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.6)' }}>
+              借對宮（{palace.borrowed.from_palace}）的主星來看：
+            </div>
+            {palace.borrowed.stars.filter(s => (s.interpretation ?? '').trim()).map(s => {
+              const sc = starColor(s.name);
+              return (
+                <div key={s.pinyin} style={{ padding: '0.6rem 0.75rem', borderRadius: 8, background: 'rgba(255,255,255,0.03)', borderLeft: `3px dashed ${sc}`, display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span style={{ fontWeight: 600, color: sc, fontSize: '0.88rem' }}>{s.name}（借星）</span>
+                    <BrightnessTag level={s.brightness} />
+                  </div>
+                  <Paragraphs body={s.interpretation} dim />
                 </div>
               );
             })}
@@ -401,11 +475,37 @@ export default function ZiweiPage() {
           </details>
         )}
 
-        {palace.minor_stars && palace.minor_stars.length > 0 && (
-          <div style={{ fontSize: '0.76rem', color: 'rgba(255,255,255,0.45)' }}>
-            輔星：{palace.minor_stars.join('、')}
+        {/* 六吉六煞 — interpreted, not just listed */}
+        {palace.minor_stars_detail && palace.minor_stars_detail.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {palace.minor_stars_detail.map(ms => {
+              const c = ms.polarity === 'ji' ? '#10b981' : ms.polarity === 'sha' ? '#f0913e' : '#9aa4b2';
+              const tag = ms.polarity === 'ji' ? '吉星' : ms.polarity === 'sha' ? '煞星' : '助星';
+              return (
+                <details key={ms.pinyin} style={{ padding: '0.5rem 0.7rem', borderRadius: 8, background: `${c}10`, borderLeft: `3px solid ${c}` }}>
+                  <summary style={{ cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600, color: c }}>
+                    {ms.name}<span style={{ fontSize: '0.7rem', fontWeight: 400, marginLeft: '0.35rem', opacity: 0.8 }}>{tag}</span>
+                  </summary>
+                  <p style={{ margin: '0.5rem 0 0', fontSize: '0.84rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.75)' }}>
+                    {ms.reading}
+                  </p>
+                </details>
+              );
+            })}
           </div>
         )}
+
+        {/* any remaining minor stars without a reading — listed only */}
+        {(() => {
+          const detailed = new Set((palace.minor_stars_detail ?? []).map(m => m.name));
+          const rest = (palace.minor_stars ?? []).filter(s => !detailed.has(s));
+          if (rest.length === 0) return null;
+          return (
+            <div style={{ fontSize: '0.76rem', color: 'rgba(255,255,255,0.45)' }}>
+              其他輔星：{rest.join('、')}
+            </div>
+          );
+        })()}
       </section>
     );
   };
@@ -463,6 +563,26 @@ export default function ZiweiPage() {
             ))}
           </section>
 
+          {/* 命主 / 身主 / 身宮 — what these basics mean */}
+          {vm.metaExplain && (vm.metaExplain.soul_star || vm.metaExplain.body_star || vm.metaExplain.shen_gong) && (
+            <details style={{ marginBottom: '1.25rem' }}>
+              <summary style={{ cursor: 'pointer', fontSize: '0.8rem', color: 'rgba(255,255,255,0.55)' }}>
+                命主 / 身主 / 身宮 是什麼？
+              </summary>
+              <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {([
+                  ['命主', vm.metaExplain.soul_star],
+                  ['身主', vm.metaExplain.body_star],
+                  ['身宮', vm.metaExplain.shen_gong],
+                ] as Array<[string, string | undefined]>).filter(([, v]) => v).map(([k, v]) => (
+                  <p key={k} style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.72)' }}>
+                    <strong style={{ color: 'rgba(255,255,255,0.85)' }}>{k}</strong>　{v}
+                  </p>
+                ))}
+              </div>
+            </details>
+          )}
+
           {sections.length === 0 ? (
             <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.03)', borderRadius: 14, border: '1px dashed rgba(255,255,255,0.08)' }}>
               命盤已排出，但詳細解析尚在準備中，請稍後重新排盤。
@@ -500,24 +620,24 @@ export default function ZiweiPage() {
                 {sections.map(({ topic, palace }) => renderSection(topic, palace!, topic.pinyin === 'ming'))}
               </div>
 
-              {/* 四化 — 天賦與課題 */}
+              {/* 四化 — at-a-glance summary; full readings are woven into the
+                  relevant palace sections above. */}
               {sihuaItems.length > 0 && (
                 <section id="sec-sihua" style={{ scrollMarginTop: '4rem', marginTop: '1.5rem' }}>
                   <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.3rem' }}>四化・天賦與課題</h2>
                   <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', marginTop: 0, marginBottom: '0.85rem' }}>
-                    出生年份在你的命盤上點亮的能量（祿權科）與功課（忌）
+                    出生年份在你命盤上點亮的能量（祿權科）與功課（忌）—— 詳解已併入上方對應宮位。
                   </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                     {sihuaItems.map(s => {
                       const accent = SIHUA_COLOR[s.hua] ?? '#c084fc';
                       return (
-                        <div key={`${s.star_pinyin}_${s.hua_pinyin}`} style={{ padding: '0.9rem 1rem', background: 'rgba(255,255,255,0.035)', borderRadius: 12, borderLeft: `3px solid ${accent}`, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                          <div style={{ fontWeight: 600 }}>
-                            你的 {s.star}<span style={{ color: accent, marginLeft: '0.3rem' }}>{s.hua}</span>
-                          </div>
-                          <KeywordRow items={s.keywords} accent={accent} />
-                          <Paragraphs body={s.interpretation} dim />
-                        </div>
+                        <span
+                          key={`${s.star_pinyin}_${s.hua_pinyin}`}
+                          style={{ padding: '0.4rem 0.75rem', borderRadius: 999, background: `${accent}1a`, border: `1px solid ${accent}55`, color: accent, fontSize: '0.85rem', fontWeight: 600 }}
+                        >
+                          {s.star}{s.hua}
+                        </span>
                       );
                     })}
                   </div>

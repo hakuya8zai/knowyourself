@@ -30,17 +30,30 @@ interface AspectEntry {
   orb: number;
 }
 
+interface PlanetDignity {
+  status: 'domicile' | 'exaltation' | 'detriment' | 'fall' | 'peregrine';
+  label: string;  // e.g. 廟（入廟）
+  note: string;
+}
+
 interface PlanetInterpretation {
   name: string;
   name_en?: string;
   sign?: string;
   house?: number;
   ruler_sign?: string;
+  dignity?: PlanetDignity | null;
   interpretation: string;
   keywords?: string[];
   in_sign_detail?: string;
   in_house_detail?: string;
 }
+
+// essential-dignity tag color (strong = green, weak = orange, neutral = grey)
+const DIGNITY_COLOR: Record<string, string> = {
+  domicile: '#10b981', exaltation: '#10b981',
+  peregrine: '#9aa4b2', detriment: '#f0913e', fall: '#f0913e',
+};
 
 interface AspectInterpretation {
   planet1: string;
@@ -425,13 +438,27 @@ export default function WesternPage() {
     if (!p) return <EmptyPanel message="尚無行星詳解資料" />;
     const themeKey = planetThemeSign(p);
     const accent = (themeKey && SIGN_ACCENT[themeKey]) ?? '#94a3b8';
+    const dignity = p.interp?.dignity;
+    const dColor = dignity ? (DIGNITY_COLOR[dignity.status] ?? '#9aa4b2') : undefined;
     const meta = (
       <>
         {p.entry.sign}
         {p.entry.house_label ? <> · {p.entry.house_label}</> : null}
+        {dignity && (
+          <span
+            title={dignity.note}
+            style={{
+              marginLeft: '0.4rem', padding: '0.05rem 0.4rem', borderRadius: 6,
+              background: `${dColor}22`, color: dColor, border: `1px solid ${dColor}55`, fontWeight: 600,
+            }}
+          >
+            {dignity.label}
+          </span>
+        )}
       </>
     );
     const secondary: Array<{ label: string; text: string }> = [];
+    if (dignity) secondary.push({ label: `星曜旺弱・${dignity.label}`, text: dignity.note });
     if (p.interp?.in_sign_detail) secondary.push({ label: '深入星座面向', text: p.interp.in_sign_detail });
     if (p.interp?.in_house_detail) secondary.push({ label: '深入宮位面向', text: p.interp.in_house_detail });
     const footer = p.entry.retrograde
