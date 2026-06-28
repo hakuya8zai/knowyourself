@@ -15,6 +15,7 @@ import styles from '../destiny.module.css';
 interface PalaceStarInterp {
   name: string;
   pinyin: string;
+  brightness?: string;  // 廟/旺/得地/利/平/不/陷
   interpretation: string;
   keywords?: string[];
 }
@@ -107,6 +108,37 @@ const SIHUA_COLOR: Record<string, string> = {
 
 function starColor(name?: string): string {
   return (name && STAR_ELEMENT_COLOR[name]) ?? '#94a3b8';
+}
+
+// 廟旺利陷 → how to frame the star's strength to the reader.
+const BRIGHTNESS_INFO: Record<string, { tone: 'bright' | 'mid' | 'weak'; note: string }> = {
+  廟: { tone: 'bright', note: '力量發揮到極致，這顆星的優點最能展現' },
+  旺: { tone: 'bright', note: '能量旺盛，發揮順暢' },
+  得地: { tone: 'bright', note: '落得其位，能穩定發揮' },
+  利: { tone: 'mid', note: '尚稱有利，發揮中等偏上' },
+  平: { tone: 'mid', note: '力量平平，吉凶皆不極端' },
+  不: { tone: 'weak', note: '不得其地，力量較受限' },
+  陷: { tone: 'weak', note: '力量微弱，星性的缺點易顯，需後天努力補強' },
+};
+const BRIGHTNESS_COLOR: Record<'bright' | 'mid' | 'weak', string> = {
+  bright: '#10b981', mid: '#9aa4b2', weak: '#f0913e',
+};
+
+function BrightnessTag({ level }: { level?: string }) {
+  if (!level) return null;
+  const info = BRIGHTNESS_INFO[level];
+  const color = info ? BRIGHTNESS_COLOR[info.tone] : '#9aa4b2';
+  return (
+    <span
+      title={info?.note}
+      style={{
+        fontSize: '0.72rem', padding: '0.05rem 0.4rem', borderRadius: 6,
+        background: `${color}22`, color, border: `1px solid ${color}55`, fontWeight: 600,
+      }}
+    >
+      {level}
+    </span>
+  );
 }
 
 /* ============================================================
@@ -275,10 +307,13 @@ export default function ZiweiPage() {
       leadLine = <>{topic.lead}<strong>無主星（空宮）</strong>，性格與際遇主要借對宮（{opp}）的星曜呈現。</>;
     } else {
       const suffix = starNames.length === 1 ? '（獨座）' : ' 同宮';
+      const starLabel = mains
+        .map(s => (s.brightness ? `${s.name}・${s.brightness}` : s.name))
+        .join('、');
       leadLine = (
         <>
           {topic.lead}主星是{' '}
-          <strong style={{ color: accent }}>{starNames.join('、')}</strong>{suffix}。
+          <strong style={{ color: accent }}>{starLabel}</strong>{suffix}。
         </>
       );
     }
@@ -336,9 +371,17 @@ export default function ZiweiPage() {
                     display: 'flex', flexDirection: 'column', gap: '0.45rem',
                   }}
                 >
-                  <div style={{ fontWeight: 600, color: sc, fontSize: '0.92rem' }}>
-                    {st.name}入{palace.name}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 600, color: sc, fontSize: '0.92rem' }}>
+                      {st.name}入{palace.name}
+                    </span>
+                    <BrightnessTag level={st.brightness} />
                   </div>
+                  {st.brightness && BRIGHTNESS_INFO[st.brightness] && (
+                    <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.55)' }}>
+                      廟旺・{st.brightness}：{BRIGHTNESS_INFO[st.brightness].note}
+                    </div>
+                  )}
                   <Paragraphs body={st.interpretation} dim />
                 </div>
               );
