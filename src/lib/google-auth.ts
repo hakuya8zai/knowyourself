@@ -12,37 +12,15 @@ export interface AuthUser {
   avatar_url?: string;
 }
 
-// User storage (only user info, NOT tokens - tokens are in httpOnly cookies)
-const USER_KEY = 'kys_user';
-
 // Cached config
 let cachedConfig: { google_client_id: string } | null = null;
 
 /**
- * Get stored user info (NOT the token - that's in httpOnly cookie)
- */
-export function getStoredUser(): AuthUser | null {
-  if (typeof window === 'undefined') return null;
-  const stored = localStorage.getItem(USER_KEY);
-  return stored ? JSON.parse(stored) : null;
-}
-
-/**
- * Store user info locally (for UI display only)
- */
-export function setUserData(user: AuthUser): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-}
-
-/**
- * Clear local user data and call logout endpoint to clear cookies
+ * Call logout endpoint to clear httpOnly cookies.
  */
 export async function clearAuth(): Promise<void> {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem(USER_KEY);
-  
-  // Clear frontend-readable cookies
+  // Remove legacy frontend-readable cookies from older deployments.
   document.cookie = 'kys_user=; path=/; domain=.selfkit.art; max-age=0';
   document.cookie = 'kys_auth=; path=/; domain=.selfkit.art; max-age=0';
   // Also try without domain (for localhost)
@@ -57,41 +35,6 @@ export async function clearAuth(): Promise<void> {
     });
   } catch (e) {
     console.error('Logout error:', e);
-  }
-}
-
-/**
- * Check if user is logged in by checking stored user data
- * Note: actual auth is verified by backend via httpOnly cookie
- */
-export function isLoggedIn(): boolean {
-  return !!getStoredUser();
-}
-
-/**
- * Verify auth status with backend (checks httpOnly cookie)
- */
-export async function verifyAuth(): Promise<AuthUser | null> {
-  try {
-    const response = await fetch(`${API_URL}/auth/me`, {
-      credentials: 'include',
-    });
-    if (!response.ok) {
-      // Not authenticated - clear local user data
-      localStorage.removeItem(USER_KEY);
-      return null;
-    }
-    const data = await response.json();
-    const user: AuthUser = {
-      id: data.id,
-      email: data.email,
-      name: data.name,
-      avatar_url: data.avatar_url,
-    };
-    setUserData(user);
-    return user;
-  } catch {
-    return null;
   }
 }
 
@@ -185,8 +128,6 @@ export async function initGoogleSignIn(
             return;
           }
           
-          // Store user info for UI (token is in httpOnly cookie)
-          setUserData(result.user);
           onSuccess(result.user);
         } catch (err) {
           console.error('[GSI] Error:', err);

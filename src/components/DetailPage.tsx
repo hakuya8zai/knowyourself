@@ -805,7 +805,7 @@ function HumanDesignRender({ data }: { data: any }) {
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
 function MeihuaRender({ data }: { data: any }) {
   const deriv = data.derivation || {};
   const upper = data.upper_trigram || {};

@@ -14,6 +14,7 @@ export default function PsychologyPage() {
       questions: 60,
       time: '10-15 分鐘',
       color: '#3b82f6',
+      evidence: '證據較成熟的人格特質模型',
       status: 'available',
     },
     {
@@ -23,6 +24,7 @@ export default function PsychologyPage() {
       questions: 70,
       time: '15-20 分鐘',
       color: '#10b981',
+      evidence: '類型偏好工具，不適合作為能力或診斷依據',
       status: 'available',
     },
     {
@@ -32,6 +34,7 @@ export default function PsychologyPage() {
       questions: 36,
       time: '8-12 分鐘',
       color: '#f59e0b',
+      evidence: '自我反思框架，實證支持較有限',
       status: 'available',
     },
     {
@@ -41,6 +44,7 @@ export default function PsychologyPage() {
       questions: 20,
       time: '5 分鐘',
       color: '#ec4899',
+      evidence: '依附傾向的自我評估，不是臨床診斷',
       status: 'available',
     },
   ];
@@ -52,7 +56,7 @@ export default function PsychologyPage() {
           ← 返回
         </Link>
         <h1 style={{ marginTop: '1rem' }}>心理測試</h1>
-        <p>科學化的心理學測驗，深入了解自己</p>
+        <p>不同理論與證據層級的自我探索工具；結果不是臨床診斷</p>
       </header>
 
       <div className={styles.grid}>
@@ -101,6 +105,14 @@ export default function PsychologyPage() {
               <span>{test.questions} 題</span>
               <span>{test.time}</span>
             </div>
+            <p style={{
+              color: '#999',
+              fontSize: '0.76rem',
+              lineHeight: 1.45,
+              marginBottom: '1rem',
+            }}>
+              證據說明：{test.evidence}
+            </p>
             {test.status === 'available' ? (
               <Link
                 href={`/dashboard/psychology/${test.id}`}

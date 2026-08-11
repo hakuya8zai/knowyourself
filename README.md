@@ -14,33 +14,35 @@
 
 ## 技術棧
 
-- **Framework**: Next.js 16.1.6 (App Router)
-- **UI**: React 19.2.4
-- **3D**: Three.js (星空背景)
-- **動畫**: Anime.js
-- **狀態管理**: Zustand
+- **Framework**: Next.js 16.2.12 (App Router)
+- **UI**: React 19.2.8
+- **驗證**: Zod 4
+- **套件管理**: pnpm 10.13.1
 - **後端**: SelfKit Backend (FastAPI + Vertex AI)
 
 ## 安全性
 
-- Next.js 16.1.6 已修復 2026-01-28 的 HIGH severity CVE
-- React 19.2.4 使用最新穩定版
-- 0 known vulnerabilities
+- httpOnly Cookie、CSRF origin 驗證與後端資料所有權檢查
+- CSP、HSTS、Permissions Policy 與安全回應標頭
+- Dependabot 與 CI lint、typecheck、test、production build
 
 ## 開發
 
 ```bash
 # 安裝依賴
-npm install
+pnpm install
 
 # 開發模式
-npm run dev
+pnpm dev
 
 # 建置
-npm run build
+pnpm build
 
 # 生產模式
-npm start
+pnpm start
+
+# 完整檢查
+pnpm check
 ```
 
 ## 環境變數
@@ -50,12 +52,6 @@ NEXT_PUBLIC_API_URL=https://selfkit-backend-xxx.run.app/api/v1
 ```
 
 ## 部署
-
-### Vercel (推薦)
-
-```bash
-npx vercel
-```
 
 ### Docker
 

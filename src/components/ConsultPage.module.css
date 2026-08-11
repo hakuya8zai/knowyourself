@@ -101,6 +101,15 @@
   color: var(--text-body);
 }
 .required { color: var(--accent-primary); }
+.optional,
+.fieldHint {
+  font-size: 0.76rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.fieldHint {
+  margin-top: -0.15rem;
+}
 .hint {
   font-size: 0.78rem;
   color: var(--text-muted);
@@ -145,6 +154,9 @@
   text-align: center;
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+.privacy a {
+  margin-left: 0.25rem;
 }
 
 /* ===== Loading Screen ===== */
@@ -205,9 +217,15 @@
 }
 .progressBar {
   height: 100%;
+  width: 45%;
   background: var(--gradient-accent);
   border-radius: 2px;
-  transition: width 0.3s ease-out;
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(330%); }
 }
 
 .loadingHint {

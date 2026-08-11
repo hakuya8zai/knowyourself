@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -124,9 +124,10 @@ export default function TarotPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  const positions = spreadType === 'single' 
-    ? ['指引']
-    : ['過去', '現在', '未來'];
+  const positions = useMemo(
+    () => spreadType === 'single' ? ['指引'] : ['過去', '現在', '未來'],
+    [spreadType],
+  );
 
   const shuffleAndDraw = useCallback(async () => {
     if (!question.trim()) return;

@@ -5,10 +5,17 @@ import { useRouter } from 'next/navigation';
 import { useAuth, BirthInfo } from '@/components/AuthContext';
 import Link from 'next/link';
 import { CitySelector, City } from '@/components/CitySelector';
+import {
+  deleteAccount,
+  deleteSavedManual,
+  listSavedManuals,
+  revokeManualShare,
+  type SavedManualSummary,
+} from '@/lib/api';
 import styles from './settings.module.css';
 
 export default function SettingsPage() {
-  const { user, birthInfo, loading: authLoading, updateBirthInfo } = useAuth();
+  const { user, birthInfo, loading: authLoading, updateBirthInfo, logout } = useAuth();
   const router = useRouter();
   
   const [formData, setFormData] = useState<BirthInfo>({
@@ -22,6 +29,8 @@ export default function SettingsPage() {
   });
   const [selectedCity, setSelectedCity] = useState<City | null>(null);
   const [saving, setSaving] = useState(false);
+  const [manuals, setManuals] = useState<SavedManualSummary[]>([]);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Redirect if not logged in
@@ -43,8 +52,29 @@ export default function SettingsPage() {
         timezone: birthInfo.timezone || '',
         gender: birthInfo.gender || '',
       });
+      if (
+        birthInfo.birth_place
+        && birthInfo.latitude != null
+        && birthInfo.longitude != null
+        && birthInfo.timezone
+      ) {
+        setSelectedCity({
+          name: birthInfo.birth_place,
+          country: '',
+          latitude: birthInfo.latitude,
+          longitude: birthInfo.longitude,
+          timezone: birthInfo.timezone,
+        });
+      }
     }
   }, [birthInfo]);
+
+  useEffect(() => {
+    if (!user) return;
+    listSavedManuals(user.id)
+      .then(result => setManuals(result.manuals))
+      .catch(() => setMessage({ type: 'error', text: '載入已儲存說明書失敗' }));
+  }, [user]);
 
   const handleCityChange = (city: City | null) => {
     setSelectedCity(city);
@@ -89,6 +119,43 @@ export default function SettingsPage() {
       setMessage({ type: 'error', text: '發生錯誤' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteManual = async (manualId: string) => {
+    if (!user || !window.confirm('確定要永久刪除這份說明書嗎？')) return;
+    try {
+      await deleteSavedManual(user.id, manualId);
+      setManuals(current => current.filter(manual => manual.id !== manualId));
+    } catch {
+      setMessage({ type: 'error', text: '刪除說明書失敗' });
+    }
+  };
+
+  const handleRevokeShare = async (manualId: string) => {
+    if (!user) return;
+    try {
+      await revokeManualShare(user.id, manualId);
+      setManuals(current => current.map(manual => (
+        manual.id === manualId ? { ...manual, shared: false } : manual
+      )));
+    } catch {
+      setMessage({ type: 'error', text: '停用分享連結失敗' });
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    const confirmation = window.prompt('此操作無法復原。請輸入「永久刪除」繼續。');
+    if (confirmation !== '永久刪除') return;
+
+    setDeletingAccount(true);
+    try {
+      await deleteAccount();
+      await logout();
+      router.replace('/');
+    } catch {
+      setMessage({ type: 'error', text: '刪除帳號失敗，請稍後再試' });
+      setDeletingAccount(false);
     }
   };
 
@@ -141,7 +208,7 @@ export default function SettingsPage() {
             value={selectedCity}
             onChange={handleCityChange}
           />
-          {formData.latitude && formData.longitude && (
+          {formData.latitude != null && formData.longitude != null && (
             <p className={styles.hint}>
               座標: {formData.latitude.toFixed(4)}, {formData.longitude.toFixed(4)}
               {formData.timezone && ` · ${formData.timezone}`}
@@ -189,7 +256,10 @@ export default function SettingsPage() {
 
         {/* 訊息 */}
         {message && (
-          <div className={`${styles.message} ${styles[message.type]}`}>
+          <div
+            className={`${styles.message} ${styles[message.type]}`}
+            role={message.type === 'error' ? 'alert' : 'status'}
+          >
             {message.text}
           </div>
         )}
@@ -199,6 +269,51 @@ export default function SettingsPage() {
           {saving ? '儲存中...' : '儲存'}
         </button>
       </form>
+
+      <section className={styles.section}>
+        <h2>已儲存的說明書</h2>
+        {manuals.length === 0 ? (
+          <p className={styles.hint}>目前沒有已儲存的說明書。</p>
+        ) : (
+          <div className={styles.manualList}>
+            {manuals.map(manual => (
+              <div key={manual.id} className={styles.manualItem}>
+                <div>
+                  <Link href={`/manual/${manual.id}`}>{manual.profile.label}</Link>
+                  <p className={styles.hint}>{manual.birth_date}</p>
+                </div>
+                <div className={styles.manualActions}>
+                  {manual.shared && (
+                    <button type="button" onClick={() => handleRevokeShare(manual.id)}>
+                      停用分享
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={styles.dangerText}
+                    onClick={() => handleDeleteManual(manual.id)}
+                  >
+                    刪除
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className={`${styles.section} ${styles.dangerZone}`}>
+        <h2>刪除帳號</h2>
+        <p>永久刪除帳號、出生資料、所有說明書與分享連結。此操作無法復原。</p>
+        <button
+          type="button"
+          className={styles.dangerButton}
+          disabled={deletingAccount}
+          onClick={handleDeleteAccount}
+        >
+          {deletingAccount ? '刪除中...' : '永久刪除帳號'}
+        </button>
+      </section>
     </div>
   );
 }

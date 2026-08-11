@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { initGoogleSignIn, AuthUser } from '@/lib/google-auth';
 import styles from './LoginModal.module.css';
 
@@ -54,7 +55,7 @@ export function LoginModal({ isOpen, onClose, onSuccess, message }: LoginModalPr
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={e => e.stopPropagation()}>
-        <button className={styles.closeBtn} onClick={onClose}>✕</button>
+        <button className={styles.closeBtn} onClick={onClose} aria-label="關閉登入視窗">✕</button>
         
         <h2 className={styles.title}>登入</h2>
         <p className={styles.subtitle}>
@@ -78,7 +79,8 @@ export function LoginModal({ isOpen, onClose, onSuccess, message }: LoginModalPr
         />
 
         <p className={styles.privacy}>
-          登入即表示同意我們的服務條款
+          登入即表示同意<Link href="/terms">服務條款</Link>與
+          <Link href="/privacy">隱私政策</Link>
         </p>
       </div>
     </div>

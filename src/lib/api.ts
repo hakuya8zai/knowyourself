@@ -1,24 +1,61 @@
 /**
  * API Client for knowyourself — v2
  */
+import { z } from 'zod';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.selfkit.art/api/v1';
+
+let refreshPromise: Promise<boolean> | null = null;
+const REQUEST_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit = {},
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(init.signal?.reason);
+  if (init.signal?.aborted) {
+    abortFromCaller();
+  } else {
+    init.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    init.signal?.removeEventListener('abort', abortFromCaller);
+  }
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = fetchWithTimeout(`${API_URL}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then(response => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
 
 // Wraps fetch with auto-refresh on 401: tries /auth/refresh once, then retries the
 // original request. Always sends httpOnly cookies. Use this for any authenticated
 // or auth-eligible API call so a short access TTL stays invisible to users.
 export async function authFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const opts: RequestInit = { ...init, credentials: 'include' };
-  let res = await fetch(input, opts);
-  if (res.status !== 401) return res;
+  const firstResponse = await fetchWithTimeout(input, opts);
+  if (firstResponse.status !== 401) return firstResponse;
 
-  const refreshed = await fetch(`${API_URL}/auth/refresh`, {
-    method: 'POST',
-    credentials: 'include',
-  });
-  if (!refreshed.ok) return res;
+  if (!await refreshAccessToken()) return firstResponse;
 
-  return fetch(input, opts);
+  return fetchWithTimeout(input, opts);
 }
 
 export interface BirthInfo {
@@ -160,7 +197,7 @@ export interface DeepData {
 
 export interface UserManual {
   id: string;
-  birth_date: string;
+  birth_date?: string;
   generated_at: string;
   profile: {
     label: string;
@@ -170,6 +207,50 @@ export interface UserManual {
   sections: Section[];
   lucky: LuckyGuide;
   deep_data: DeepData;
+}
+
+const UserManualSchema: z.ZodType<UserManual> = z.object({
+  id: z.string().min(1),
+  birth_date: z.string().min(1).optional(),
+  generated_at: z.string().min(1),
+  profile: z.object({
+    label: z.string(),
+    tagline: z.string(),
+  }),
+  spectrum: z.object({
+    action: z.number(),
+    social: z.number(),
+    creativity: z.number(),
+    analysis: z.number(),
+    intuition: z.number(),
+    resilience: z.number(),
+  }),
+  sections: z.array(z.object({
+    id: z.string(),
+    heading: z.string(),
+    content: z.string(),
+    sub_points: z.array(z.string()).optional(),
+  })),
+  lucky: z.object({
+    color: z.string(),
+    number: z.number(),
+    direction: z.string(),
+    element: z.string(),
+    season: z.string(),
+  }),
+  deep_data: z.object({
+    zodiac_name: z.string(),
+    zodiac_element: z.string(),
+    chinese_zodiac: z.string(),
+    chinese_element: z.string(),
+    western: z.custom<WesternAstro>().optional(),
+    chinese: z.custom<ChineseAstro>().optional(),
+    human_design: z.custom<HumanDesignData>().optional(),
+  }),
+});
+
+async function parseManualResponse(response: Response): Promise<UserManual> {
+  return UserManualSchema.parse(await response.json());
 }
 
 /**
@@ -189,7 +270,7 @@ export async function generateManual(request: GenerateManualRequest): Promise<Us
     throw new Error(error.detail || '生成失敗');
   }
 
-  return response.json();
+  return parseManualResponse(response);
 }
 
 /**
@@ -202,7 +283,7 @@ export async function getManual(manualId: string): Promise<UserManual> {
     throw new Error('找不到使用說明書');
   }
 
-  return response.json();
+  return parseManualResponse(response);
 }
 
 export type DetailSystem = 'western' | 'ziwei' | 'bazi' | 'human_design' | 'meihua';
@@ -211,6 +292,11 @@ export interface DetailResponse {
   system: string;
   data: Record<string, unknown>;
 }
+
+const DetailResponseSchema: z.ZodType<DetailResponse> = z.object({
+  system: z.string(),
+  data: z.record(z.string(), z.unknown()),
+});
 
 /**
  * Get-or-create per-system detail from birth_info.
@@ -233,7 +319,7 @@ export async function getDetailByBirth(
     throw new Error(error.detail || '載入失敗');
   }
 
-  return response.json();
+  return DetailResponseSchema.parse(await response.json());
 }
 
 /**
@@ -250,7 +336,7 @@ export async function getManualDetail(manualId: string, system: DetailSystem): P
     throw new Error(error.detail || '載入失敗');
   }
 
-  return response.json();
+  return DetailResponseSchema.parse(await response.json());
 }
 
 // ============================================================
@@ -272,7 +358,10 @@ export async function saveManual(manualId: string): Promise<{ success: boolean; 
     throw new Error(error.detail || '儲存失敗');
   }
 
-  return response.json();
+  return z.object({
+    success: z.literal(true),
+    doc_id: z.string(),
+  }).parse(await response.json());
 }
 
 export interface SavedManualSummary {
@@ -280,7 +369,21 @@ export interface SavedManualSummary {
   birth_date: string;
   profile: { label: string; tagline: string };
   saved_at: string;
+  shared?: boolean;
 }
+
+const SavedManualListSchema = z.object({
+  manuals: z.array(z.object({
+    id: z.string(),
+    birth_date: z.string(),
+    profile: z.object({
+      label: z.string(),
+      tagline: z.string(),
+    }),
+    saved_at: z.string(),
+    shared: z.boolean().optional(),
+  })),
+});
 
 /**
  * List user's saved manuals
@@ -292,7 +395,7 @@ export async function listSavedManuals(userId: string): Promise<{ manuals: Saved
     throw new Error('載入失敗');
   }
 
-  return response.json();
+  return SavedManualListSchema.parse(await response.json());
 }
 
 /**
@@ -305,7 +408,7 @@ export async function getSavedManual(userId: string, manualId: string): Promise<
     throw new Error('找不到已儲存的說明書');
   }
 
-  return response.json();
+  return parseManualResponse(response);
 }
 
 /**
@@ -320,7 +423,39 @@ export async function deleteSavedManual(userId: string, manualId: string): Promi
     throw new Error('刪除失敗');
   }
 
-  return response.json();
+  return z.object({ success: z.literal(true) }).parse(await response.json());
+}
+
+export async function createManualShare(
+  userId: string,
+  manualId: string,
+): Promise<{ share_token: string }> {
+  const response = await authFetch(`${API_URL}/manual/user/${userId}/${manualId}/share`, {
+    method: 'POST',
+  });
+  if (!response.ok) throw new Error('建立分享連結失敗');
+  return z.object({ share_token: z.string().min(20) }).parse(await response.json());
+}
+
+export async function revokeManualShare(
+  userId: string,
+  manualId: string,
+): Promise<void> {
+  const response = await authFetch(`${API_URL}/manual/user/${userId}/${manualId}/share`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('停用分享連結失敗');
+}
+
+export async function getSharedManual(shareToken: string): Promise<UserManual> {
+  const response = await fetch(`${API_URL}/manual/shared/${shareToken}`);
+  if (!response.ok) throw new Error('分享連結不存在或已停用');
+  return parseManualResponse(response);
+}
+
+export async function deleteAccount(): Promise<void> {
+  const response = await authFetch(`${API_URL}/auth/account`, { method: 'DELETE' });
+  if (!response.ok) throw new Error('刪除帳號失敗');
 }
 
 // ============================================================
@@ -432,7 +567,13 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     throw new Error('對話失敗');
   }
 
-  return response.json();
+  return z.object({
+    message: z.object({
+      role: z.enum(['user', 'assistant']),
+      content: z.string(),
+      sources: z.array(z.string()).optional(),
+    }),
+  }).parse(await response.json());
 }
 
 /**
@@ -442,7 +583,8 @@ export async function sendChatMessageStream(
   request: ChatRequest,
   onChunk: (content: string) => void,
   onDone: () => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const response = await authFetch(`${API_URL}/chat/stream`, {
     method: 'POST',
@@ -450,6 +592,7 @@ export async function sendChatMessageStream(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(request),
+    signal,
   });
 
   if (!response.ok) {
@@ -463,31 +606,56 @@ export async function sendChatMessageStream(
 
   const decoder = new TextDecoder();
   let buffer = '';
+  let finished = false;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  const processEvent = (eventBlock: string) => {
+    const dataLines = eventBlock
+      .split('\n')
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).replace(/^ /, ''));
+    if (dataLines.length === 0) return;
 
-    buffer += decoder.decode(value, { stream: true });
-    
-    // Process SSE events
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+    try {
+      const data = JSON.parse(dataLines.join('\n'));
+      if (data.type === 'chunk' && typeof data.content === 'string') {
+        onChunk(data.content);
+      } else if (data.type === 'done') {
+        finished = true;
+        onDone();
+      } else if (data.type === 'error') {
+        finished = true;
+        onError(typeof data.content === 'string' ? data.content : '對話發生錯誤');
+      }
+    } catch {
+      finished = true;
+      onError('收到無法解析的串流資料');
+    }
+  };
 
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try {
-          const data = JSON.parse(line.slice(6));
-          if (data.type === 'chunk') {
-            onChunk(data.content);
-          } else if (data.type === 'done') {
-            onDone();
-          } else if (data.type === 'error') {
-            onError(data.content);
-          }
-        } catch {
-          // Ignore parse errors
-        }
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+      events.forEach(processEvent);
+    }
+
+    buffer += decoder.decode().replace(/\r\n/g, '\n');
+    if (buffer.trim()) processEvent(buffer);
+    if (!finished) {
+      finished = true;
+      onDone();
+    }
+  } finally {
+    reader.releaseLock();
+    if (signal?.aborted && !finished) {
+      try {
+        await response.body?.cancel();
+      } catch {
+        // The stream may already be closed.
       }
     }
   }

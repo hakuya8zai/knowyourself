@@ -36,7 +36,7 @@ resource "google_cloud_run_v2_service" "frontend" {
 
     scaling {
       min_instance_count = 0
-      max_instance_count = 1
+      max_instance_count = 3
     }
 
     timeout = "30s"

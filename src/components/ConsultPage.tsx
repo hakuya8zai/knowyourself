@@ -23,9 +23,8 @@ export function ConsultPage() {
   const [gender, setGender] = useState<'male' | 'female' | ''>('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState(0);
-  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const autoSubmittedRef = useRef(false);
+  const hydratedRef = useRef(false);
 
   useEffect(() => {
     if (!isLoading) return;
@@ -37,16 +36,8 @@ export function ConsultPage() {
       });
     }, 5000);
 
-    const progressInterval = setInterval(() => {
-      setProgress(prev => {
-        if (prev < 85) return prev + Math.random() * 2.5;
-        return prev;
-      });
-    }, 400);
-
     return () => {
       clearInterval(phaseInterval);
-      clearInterval(progressInterval);
     };
   }, [isLoading]);
 
@@ -54,15 +45,10 @@ export function ConsultPage() {
     setError(null);
     setIsLoading(true);
     setLoadingPhase(0);
-    setProgress(0);
-
-    // Mirror to localStorage so the post-login flow can recover it
-    localStorage.setItem('kys_birth_info', JSON.stringify(info));
 
     try {
       const result = await generateManual({ birth_info: info });
-      setProgress(100);
-      setTimeout(() => router.push(`/manual/${result.id}`), 400);
+      router.push(`/manual/${result.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成失敗，請稍後再試');
       setIsLoading(false);
@@ -85,10 +71,6 @@ export function ConsultPage() {
       else if (date < minDate) errors.push('出生日期太早了');
     }
 
-    if (!birthTime) errors.push('請填寫出生時間');
-    if (!selectedCity) errors.push('請選擇出生地點');
-    if (!gender) errors.push('請選擇性別');
-
     if (errors.length > 0) {
       setError(errors.join('、'));
       return;
@@ -105,19 +87,37 @@ export function ConsultPage() {
     });
   };
 
-  // Returning users already have birth info on file - skip the form, go straight to generation.
-  // The form is only shown to first-time visitors or if auto-generation fails.
+  // Returning users can review and edit saved inputs before generating again.
   useEffect(() => {
-    if (authLoading || autoSubmittedRef.current || !authBirthInfo?.birth_date) return;
-    autoSubmittedRef.current = true;
-    runGenerate(authBirthInfo);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (authLoading || hydratedRef.current || !authBirthInfo?.birth_date) return;
+    hydratedRef.current = true;
+    setBirthDate(authBirthInfo.birth_date);
+    setBirthTime(authBirthInfo.birth_time || '');
+    setGender(
+      authBirthInfo.gender === 'male' || authBirthInfo.gender === 'female'
+        ? authBirthInfo.gender
+        : '',
+    );
+    if (
+      authBirthInfo.birth_place &&
+      authBirthInfo.latitude != null &&
+      authBirthInfo.longitude != null &&
+      authBirthInfo.timezone
+    ) {
+      setSelectedCity({
+        name: authBirthInfo.birth_place,
+        country: '',
+        latitude: authBirthInfo.latitude,
+        longitude: authBirthInfo.longitude,
+        timezone: authBirthInfo.timezone,
+      });
+    }
   }, [authLoading, authBirthInfo]);
 
   if (isLoading) {
     return (
       <div className={styles.page}>
-        <div className={styles.loadingScreen}>
+        <div className={styles.loadingScreen} role="status" aria-live="polite">
           {/* Pulsing orb */}
           <div className={styles.orbContainer}>
             <div className={styles.orb} />
@@ -130,11 +130,8 @@ export function ConsultPage() {
           </p>
 
           {/* Progress bar */}
-          <div className={styles.progressTrack}>
-            <div
-              className={styles.progressBar}
-              style={{ width: `${Math.min(progress, 100)}%` }}
-            />
+          <div className={styles.progressTrack} aria-hidden="true">
+            <div className={styles.progressBar} />
           </div>
 
           <p className={styles.loadingHint}>大約需要 15-25 秒</p>
@@ -171,7 +168,7 @@ export function ConsultPage() {
 
           <form onSubmit={handleSubmit} className={styles.form}>
             {error && (
-              <div className={styles.error}>{error}</div>
+              <div className={styles.error} role="alert">{error}</div>
             )}
 
             {/* Birth date */}
@@ -197,21 +194,21 @@ export function ConsultPage() {
             {/* Birth time */}
             <div className={styles.field}>
               <label htmlFor="birthTime">
-                出生時間 <span className={styles.required}>*</span>
+                出生時間 <span className={styles.optional}>（可不填）</span>
               </label>
               <input
                 type="time"
                 id="birthTime"
                 value={birthTime}
                 onChange={e => setBirthTime(e.target.value)}
-                required
               />
+              <p className={styles.fieldHint}>不知道時間也可以生成，但上升星座與宮位會受限。</p>
             </div>
 
             {/* Birth place */}
             <div className={styles.field}>
               <label htmlFor="birthPlace">
-                出生地點 <span className={styles.required}>*</span>
+                出生地點 <span className={styles.optional}>（可不填）</span>
               </label>
               <CitySelector
                 value={selectedCity}
@@ -222,14 +219,15 @@ export function ConsultPage() {
 
             {/* Gender */}
             <div className={styles.field}>
-              <label>性別 <span className={styles.required}>*</span></label>
-              <div className={styles.genderGroup}>
+              <label>性別 <span className={styles.optional}>（可不提供）</span></label>
+              <div className={styles.genderGroup} role="group" aria-label="性別">
                 {(['male', 'female'] as const).map(g => (
                   <button
                     key={g}
                     type="button"
                     className={`${styles.genderBtn} ${gender === g ? styles.genderActive : ''}`}
                     onClick={() => setGender(gender === g ? '' : g)}
+                    aria-pressed={gender === g}
                   >
                     {g === 'male' ? '男' : '女'}
                   </button>
@@ -242,7 +240,10 @@ export function ConsultPage() {
               生成我的說明書
             </button>
 
-            <p className={styles.privacy}>資料不儲存，僅用於即時分析</p>
+            <p className={styles.privacy}>
+              出生資料會用於產生與快取分析；登入後才會綁定帳號保存。詳見
+              <Link href="/privacy">隱私政策</Link>。
+            </p>
           </form>
         </div>
       </main>
