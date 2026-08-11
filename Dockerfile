@@ -3,9 +3,11 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+RUN corepack enable
+
 # Install dependencies
-COPY package*.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 # Copy source and build
 COPY . .
@@ -13,7 +15,7 @@ COPY . .
 # Set build-time environment variable for Next.js
 ENV NEXT_PUBLIC_API_URL=https://api.selfkit.art/api/v1
 
-RUN npm run build
+RUN pnpm build
 
 # Production stage - use Node.js for standalone Next.js
 FROM node:22-alpine AS runner
@@ -24,10 +26,12 @@ ENV NODE_ENV=production
 ENV PORT=8080
 
 # Copy standalone output
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
 
 EXPOSE 8080
+
+USER node
 
 CMD ["node", "server.js"]

@@ -95,7 +95,7 @@ function Diamond({ x, y, size, fill, stroke }: { x: number; y: number; size: num
   return <polygon points={points} fill={fill} stroke={stroke} strokeWidth="2" />;
 }
 
-export function BodyGraph({ centers, channels = [] }: Props) {
+export function BodyGraph({ centers }: Props) {
   const width = 300;
   const height = 400;
 

@@ -5,7 +5,6 @@ import Link from 'next/link';
 import styles from '../../dashboard.module.css';
 import {
   questions,
-  attachmentStyles,
   calculateAttachmentResults,
   getStyleDescription,
   dimensionInfo,

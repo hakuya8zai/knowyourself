@@ -13,7 +13,7 @@ const CHAPTERS = [
   { title: '感情中的你', desc: '你怎麼愛人，又需要怎樣被愛' },
   { title: '職業天賦', desc: '你天生適合做什麼' },
   { title: '成長的方向', desc: '如果你願意，下一步可以往哪走' },
-  { title: '今年的你', desc: '2026 年，屬於你的主旋律' },
+  { title: '此刻的你', desc: '你現在的主旋律，以及下一步的方向' },
 ];
 
 export function HomePage() {
@@ -111,7 +111,11 @@ export function HomePage() {
 
       {/* Footer */}
       <footer className={styles.footer}>
-        僅供自我探索參考，不構成專業建議
+        <span>僅供自我探索參考，不構成專業建議</span>
+        <span> · </span>
+        <Link href="/privacy">隱私</Link>
+        <span> · </span>
+        <Link href="/terms">條款</Link>
       </footer>
     </div>
   );

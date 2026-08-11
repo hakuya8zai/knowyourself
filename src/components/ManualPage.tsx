@@ -2,15 +2,21 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { getManual, saveManual, type UserManual } from '@/lib/api';
+import {
+  createManualShare,
+  getManual,
+  getSharedManual,
+  saveManual,
+  type UserManual,
+} from '@/lib/api';
 import { RadarChart } from './RadarChart';
 import { useAuth } from './AuthContext';
 import { LoginModal } from './LoginModal';
 import styles from './ManualPage.module.css';
 
 interface Props {
-  manualId: string;
+  manualId?: string;
+  shareToken?: string;
 }
 
 function SectionBlock({ heading, content, subPoints, id }: {
@@ -64,31 +70,42 @@ function SectionBlock({ heading, content, subPoints, id }: {
   );
 }
 
-export function ManualPage({ manualId }: Props) {
+export function ManualPage({ manualId, shareToken }: Props) {
   const [manual, setManual] = useState<UserManual | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [hasTriedAutoSave, setHasTriedAutoSave] = useState(false);
-  const router = useRouter();
   const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const savePromiseRef = useRef<Promise<boolean> | null>(null);
 
-  const performSave = useCallback(async () => {
-    if (saveStatus === 'saving' || saveStatus === 'saved') return;
-    setSaveStatus('saving');
-    try {
-      await saveManual(manualId);  // Uses httpOnly cookie for auth
-      setSaveStatus('saved');
-    } catch {
-      setSaveStatus('error');
-      setTimeout(() => setSaveStatus('idle'), 2000);
-    }
-  }, [manualId, saveStatus]);
+  const performSave = useCallback(async (): Promise<boolean> => {
+    if (!manualId || shareToken) return false;
+    if (saveStatus === 'saved') return true;
+    if (savePromiseRef.current) return savePromiseRef.current;
+
+    const savePromise = (async () => {
+      setSaveStatus('saving');
+      try {
+        await saveManual(manualId);  // Uses httpOnly cookie for auth
+        setSaveStatus('saved');
+        return true;
+      } catch {
+        setSaveStatus('error');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+        return false;
+      } finally {
+        savePromiseRef.current = null;
+      }
+    })();
+    savePromiseRef.current = savePromise;
+    return savePromise;
+  }, [manualId, saveStatus, shareToken]);
 
   // Auto-save logic: runs after manual loaded + auth state resolved
   useEffect(() => {
-    if (isLoading || authLoading || hasTriedAutoSave) return;
+    if (shareToken || isLoading || authLoading || hasTriedAutoSave) return;
     
     // Mark that we've tried auto-save (prevent re-triggering)
     setHasTriedAutoSave(true);
@@ -100,7 +117,7 @@ export function ManualPage({ manualId }: Props) {
       // Not logged in → show login modal for auto-save
       setShowLoginModal(true);
     }
-  }, [isLoading, authLoading, isAuthenticated, hasTriedAutoSave, performSave]);
+  }, [shareToken, isLoading, authLoading, isAuthenticated, hasTriedAutoSave, performSave]);
 
   // Handle save after successful login. /manual/save now propagates
   // birth_info to the user profile server-side, so we no longer need a
@@ -114,7 +131,9 @@ export function ManualPage({ manualId }: Props) {
   useEffect(() => {
     async function load() {
       try {
-        const data = await getManual(manualId);
+        const data = shareToken
+          ? await getSharedManual(shareToken)
+          : await getManual(manualId || '');
         setManual(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : '載入失敗');
@@ -123,16 +142,32 @@ export function ManualPage({ manualId }: Props) {
       }
     }
     load();
-  }, [manualId]);
+  }, [manualId, shareToken]);
 
-  const handleShare = useCallback(() => {
-    if (navigator.share) {
-      navigator.share({ title: '我的使用說明書', url: window.location.href });
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      alert('已複製連結');
+  const handleShare = useCallback(async () => {
+    try {
+      let shareUrl = window.location.href;
+      if (!shareToken) {
+        if (!user || !manualId) {
+          setShowLoginModal(true);
+          return;
+        }
+        if (saveStatus !== 'saved' && !await performSave()) return;
+        const { share_token } = await createManualShare(user.id, manualId);
+        shareUrl = `${window.location.origin}/shared/${share_token}`;
+      }
+
+      if (navigator.share) {
+        await navigator.share({ title: '我的使用說明書', url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        alert('已複製隱私分享連結');
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      alert(err instanceof Error ? err.message : '分享失敗，請稍後再試');
     }
-  }, []);
+  }, [manualId, performSave, saveStatus, shareToken, user]);
 
   if (isLoading) {
     return (
@@ -170,7 +205,7 @@ export function ManualPage({ manualId }: Props) {
           setShowLoginModal(false);
         }}
         onSuccess={handleLoginSuccess}
-        message="登入後自動儲存你的說明書"
+        message="登入後才能建立可停用的隱私分享連結"
       />
 
       {/* Background */}
@@ -182,13 +217,13 @@ export function ManualPage({ manualId }: Props) {
       {/* Header */}
       <header className={styles.header}>
         <Link href="/" className={styles.back}>
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none">
             <path d="M12 15l-5-5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </Link>
         <span className={styles.headerTitle}>你的使用說明書</span>
-        <button className={styles.shareBtn} onClick={handleShare}>
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <button className={styles.shareBtn} onClick={handleShare} aria-label="分享說明書">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none">
             <path d="M13.5 6a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5zM4.5 11.25a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5zM13.5 16.5a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5zM6.44 10.24l5.13 2.77M11.56 4.99L6.44 7.76" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
@@ -254,7 +289,7 @@ export function ManualPage({ manualId }: Props) {
         </div>
 
         {/* 5. DETAIL LINK */}
-        <div className={styles.detailLink}>
+        {!shareToken && manualId && <div className={styles.detailLink}>
           <Link href={`/manual/${manualId}/details`} className={styles.detailBtn}>
             <span>查看詳細資料</span>
             <span className={styles.detailHint}>星座命盤 · 八字 · 人類圖</span>
@@ -262,12 +297,12 @@ export function ManualPage({ manualId }: Props) {
               <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </Link>
-        </div>
+        </div>}
 
         {/* 6. ACTIONS */}
         <div className={styles.actions}>
           {/* Save status indicator */}
-          {saveStatus !== 'idle' && (
+          {!shareToken && saveStatus !== 'idle' && (
             <div className={styles.saveStatus}>
               {saveStatus === 'saving' && '💾 儲存中...'}
               {saveStatus === 'saved' && '✓ 已儲存到你的帳號'}

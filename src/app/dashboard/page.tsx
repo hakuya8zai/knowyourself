@@ -79,11 +79,11 @@ export default function DashboardPage() {
           </div>
           <div className={styles.infoCard}>
             <h3>🧪 心理測驗</h3>
-            <p>科學化的人格測驗，包含 Big Five、MBTI、九型人格等，了解你的行為模式。</p>
+            <p>不同理論與證據層級的自我探索測驗；結果頁會說明各自限制。</p>
           </div>
           <div className={styles.infoCard}>
             <h3>💬 AI 諮詢</h3>
-            <p>整合所有測驗與命盤數據，提供個人化的深度解讀與建議。</p>
+            <p>在你同意後載入已儲存說明書摘要，提供個人化對話與行動建議。</p>
           </div>
         </div>
       </section>

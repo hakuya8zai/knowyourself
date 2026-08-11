@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
         const decodedUrl = decodeURIComponent(returnUrlCookie);
         // Validate it's from our domain
         const url = new URL(decodedUrl);
-        if (url.origin === BASE_URL || url.hostname === 'localhost') {
+        if (url.origin === new URL(BASE_URL).origin) {
           redirectUrl = decodedUrl;
         }
       } catch {
@@ -62,47 +62,22 @@ export async function POST(request: NextRequest) {
       // Access token - httpOnly, cross-subdomain
       response.cookies.set('kys_access_token', data.tokens.access_token, {
         path: '/',
-        maxAge: data.tokens.expires_in || 900, // 15 min default
+        // The JWT expires before this cookie; keeping the cookie allows the
+        // client to reach /auth/refresh without a false login redirect.
+        maxAge: 60 * 60 * 24 * 30,
         httpOnly: true,
         secure: true,
-        sameSite: 'none', // Required for cross-origin API calls
+        sameSite: 'lax', // selfkit.art subdomains are same-site
         domain: '.selfkit.art',
       });
       
       // Refresh token - httpOnly, only for auth endpoints
       response.cookies.set('kys_refresh_token', data.tokens.refresh_token, {
         path: '/api/v1/auth',
-        maxAge: 60 * 60 * 24 * 7, // 7 days
+        maxAge: 60 * 60 * 24 * 30,
         httpOnly: true,
         secure: true,
-        sameSite: 'none',
-        domain: '.selfkit.art',
-      });
-    }
-    
-    // Set user info in a readable cookie for the frontend
-    if (data.user) {
-      const userJson = JSON.stringify({
-        id: data.user.id,
-        email: data.user.email,
-        name: data.user.name,
-        avatar_url: data.user.avatar_url,
-      });
-      
-      response.cookies.set('kys_user', userJson, {
-        path: '/',
-        maxAge: 60 * 60 * 24 * 7, // 7 days
         sameSite: 'lax',
-        secure: true,
-        domain: '.selfkit.art',
-      });
-      
-      // Auth flag for quick checks
-      response.cookies.set('kys_auth', '1', {
-        path: '/',
-        maxAge: 60 * 60 * 24 * 7,
-        sameSite: 'lax',
-        secure: true,
         domain: '.selfkit.art',
       });
     }

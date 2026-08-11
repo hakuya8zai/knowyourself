@@ -144,7 +144,6 @@ export function RadarChart({ spectrum }: Props) {
         {values.map((v, i) => {
           const angle = (360 / 6) * i;
           const r = animated ? (v / 100) * RADIUS : 0;
-          const [x, y] = polarToXY(angle, r);
           // Offset the value label slightly outward from the dot
           const labelOffset = 16;
           const [lx, ly] = polarToXY(angle, r + labelOffset);

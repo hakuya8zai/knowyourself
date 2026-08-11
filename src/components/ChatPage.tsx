@@ -10,6 +10,8 @@ import {
   ManualContext,
   UserManual,
 } from '@/lib/api';
+import { useAuth } from './AuthContext';
+import { LoginModal } from './LoginModal';
 import styles from './ChatPage.module.css';
 
 interface Message {
@@ -33,6 +35,7 @@ const SUGGESTIONS = [
 ];
 
 export function ChatPage() {
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const searchParams = useSearchParams();
   const manualId = searchParams.get('manual');
   
@@ -42,9 +45,12 @@ export function ChatPage() {
   const [manualContext, setManualContext] = useState<ManualContext | null>(null);
   const [manual, setManual] = useState<UserManual | null>(null);
   const [loadingManual, setLoadingManual] = useState(false);
+  const [includeManualContext, setIncludeManualContext] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const requestControllerRef = useRef<AbortController | null>(null);
 
   // Auto-scroll to bottom
   const scrollToBottom = useCallback(() => {
@@ -54,6 +60,8 @@ export function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  useEffect(() => () => requestControllerRef.current?.abort(), []);
 
   // Load manual context if manualId provided
   useEffect(() => {
@@ -91,6 +99,10 @@ export function ChatPage() {
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
+    if (!isAuthenticated) {
+      setShowLogin(true);
+      return;
+    }
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -108,6 +120,8 @@ export function ChatPage() {
     setMessages(prev => [...prev, userMessage, assistantMessage]);
     setInput('');
     setIsLoading(true);
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
 
     // Reset textarea height
     if (inputRef.current) {
@@ -125,57 +139,69 @@ export function ChatPage() {
         {
           message: text.trim(),
           history,
-          manual_context: manualContext || undefined,
-          manual_id: manualId || undefined,
+          manual_context: includeManualContext ? manualContext || undefined : undefined,
+          manual_id: includeManualContext ? manualId || undefined : undefined,
         },
         // onChunk
         (chunk) => {
           setMessages(prev => {
-            const updated = [...prev];
-            const lastMsg = updated[updated.length - 1];
-            if (lastMsg.role === 'assistant') {
-              lastMsg.content += chunk;
-            }
-            return updated;
+            const lastIndex = prev.length - 1;
+            return prev.map((message, index) => (
+              index === lastIndex && message.role === 'assistant'
+                ? { ...message, content: message.content + chunk }
+                : message
+            ));
           });
         },
         // onDone
         () => {
           setMessages(prev => {
-            const updated = [...prev];
-            const lastMsg = updated[updated.length - 1];
-            if (lastMsg.role === 'assistant') {
-              lastMsg.isStreaming = false;
-            }
-            return updated;
+            const lastIndex = prev.length - 1;
+            return prev.map((message, index) => (
+              index === lastIndex && message.role === 'assistant'
+                ? { ...message, isStreaming: false }
+                : message
+            ));
           });
         },
         // onError
         (error) => {
           setMessages(prev => {
-            const updated = [...prev];
-            const lastMsg = updated[updated.length - 1];
-            if (lastMsg.role === 'assistant') {
-              lastMsg.content = error;
-              lastMsg.isStreaming = false;
-            }
-            return updated;
+            const lastIndex = prev.length - 1;
+            return prev.map((message, index) => (
+              index === lastIndex && message.role === 'assistant'
+                ? { ...message, content: error, isStreaming: false }
+                : message
+            ));
           });
-        }
+        },
+        controller.signal,
       );
-    } catch {
+    } catch (error) {
       setMessages(prev => {
-        const updated = [...prev];
-        const lastMsg = updated[updated.length - 1];
-        if (lastMsg.role === 'assistant') {
-          lastMsg.content = '抱歉，發生了一些問題。請稍後再試 🙏';
-          lastMsg.isStreaming = false;
-        }
-        return updated;
+        const lastIndex = prev.length - 1;
+        return prev.map((message, index) => (
+          index === lastIndex && message.role === 'assistant'
+            ? {
+                ...message,
+                content: error instanceof DOMException && error.name === 'AbortError'
+                  ? `${message.content}${message.content ? '\n\n' : ''}（已停止產生）`
+                  : '抱歉，發生了一些問題。請稍後再試 🙏',
+                isStreaming: false,
+              }
+            : message
+        ));
       });
     } finally {
+      if (requestControllerRef.current === controller) {
+        requestControllerRef.current = null;
+      }
       setIsLoading(false);
     }
+  };
+
+  const stopGenerating = () => {
+    requestControllerRef.current?.abort();
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -206,9 +232,9 @@ export function ChatPage() {
         </Link>
         <div className={styles.headerCenter}>
           <div className={styles.headerTitle}>AI 顧問</div>
-          {manualContext && (
+          {manualContext && includeManualContext && (
             <div className={styles.headerSubtitle}>
-              已載入你的命盤資料
+              已加入說明書摘要
             </div>
           )}
         </div>
@@ -261,6 +287,17 @@ export function ChatPage() {
 
       {/* Input */}
       <footer className={styles.footer}>
+        {manualContext && (
+          <label className={styles.contextConsent}>
+            <input
+              type="checkbox"
+              checked={includeManualContext}
+              onChange={(event) => setIncludeManualContext(event.target.checked)}
+              disabled={isLoading}
+            />
+            將說明書摘要提供給 AI，以產生個人化回覆
+          </label>
+        )}
         <form onSubmit={handleSubmit} className={styles.inputForm}>
           <textarea
             ref={inputRef}
@@ -270,28 +307,48 @@ export function ChatPage() {
             placeholder="輸入訊息..."
             className={styles.input}
             rows={1}
-            disabled={isLoading || loadingManual}
+            disabled={isLoading || loadingManual || authLoading}
           />
-          <button
-            type="submit"
-            className={styles.sendBtn}
-            disabled={!input.trim() || isLoading}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+          {isLoading ? (
+            <button
+              type="button"
+              className={styles.stopBtn}
+              onClick={stopGenerating}
+              aria-label="停止產生回覆"
+            >
+              <span aria-hidden="true" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className={styles.sendBtn}
+              disabled={!input.trim() || loadingManual || authLoading}
+              aria-label="傳送訊息"
+            >
+              <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          )}
         </form>
         <p className={styles.disclaimer}>
-          AI 僅供參考，不構成專業建議
+          AI 回覆可能有誤，僅供自我探索，不構成醫療或專業建議。
+          如有立即危險，請聯絡所在地緊急服務或身邊可信任的人。{' '}
+          <Link href="/privacy">了解資料如何使用</Link>
         </p>
       </footer>
+      <LoginModal
+        isOpen={showLogin}
+        onClose={() => setShowLogin(false)}
+        onSuccess={() => window.location.reload()}
+        message="登入後即可使用 AI 顧問；對話內容不會加入公開分享頁"
+      />
     </div>
   );
 }
